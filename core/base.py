@@ -225,10 +225,11 @@ class main_window(QtWidgets.QMainWindow):
 		self.menu_file.addAction(self.menu_file_save)
 		self.menu_file.addAction(self.menu_file_close)
 		self.menu_file.addSeparator()
-		for path in recent_files:
-			menu_recent_file = QtWidgets.QAction(path, self)
-			menu_recent_file.triggered.connect(functools.partial(self.open_project, path))
-			self.menu_file.addAction(menu_recent_file)
+		if recent_files is not None:
+			for path in recent_files:
+				menu_recent_file = QtWidgets.QAction(path, self)
+				menu_recent_file.triggered.connect(functools.partial(self.open_project, path))
+				self.menu_file.addAction(menu_recent_file)
 		self.menu_file.addSeparator()
 		self.menu_file.addAction(self.menu_file_exit)
 		
