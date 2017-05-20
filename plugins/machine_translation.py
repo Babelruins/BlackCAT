@@ -13,16 +13,9 @@ class plugin_thread(QtCore.QThread):
 		self.options = options
 		self.source = source
 		
-		if source == "gtranslateweb":
-			user_agent = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.7) Gecko/2009021910 Firefox/3.0.7'
-			self.host = 'https://translate.google.com/m'
-			self.headers = {'User-Agent':user_agent,}
-		if source == "mstranslator":
-			api_key = ''
-			self.translator = Translator(api_key)
-		elif source == "yandex":
-			api_key = ''
-			self.translator = YandexTranslate(api_key)
+		#Insert your api keys here
+		self.mstranslate_key = ''
+		self.yandex_key = ''
 		
 		self.options = options
 		self.finished.connect(callback)
@@ -32,16 +25,22 @@ class plugin_thread(QtCore.QThread):
 		response = ''
 		try:
 			if self.source == "gtranslateweb":
+				user_agent = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.7) Gecko/2009021910 Firefox/3.0.7'
+				host = 'https://translate.google.com/m'
+				headers = {'User-Agent':user_agent,}
+			
 				params = {'sl': self.options['source_language'], 'tl': self.options['target_language'], 'q': self.options['source_text']}
-				html = requests.get(self.host, params=params, headers=self.headers)
+				html = requests.get(host, params=params, headers=headers)
 				soup = BeautifulSoup(html.text, "lxml")
 				for div in soup.find_all('div'):
 					if div.has_attr('class'):
 						if div['class'][0] == 't0':
 							response = div.string
 			elif self.source == "mstranslator":
+				self.translator = Translator(self.mstranslate_key )
 				response = self.translator.translate(self.options['source_text'], lang_from=self.options['source_language'], lang_to=self.options['target_language'])
 			elif self.source == "yandex":
+				self.translator = YandexTranslate(self.yandex_key)
 				response = self.translator.translate(self.options['source_text'], self.options['source_language'] + "-" + self.options['target_language'])['text'][0]
 		except Exception as e:
 			response = '[Error] ' + str(e)

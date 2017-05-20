@@ -1,4 +1,4 @@
-__all__ = ["punkt", "odt"]
+__all__ = ["punkt", "odt", "sgml"]
 
 import importlib
 for module in __all__:

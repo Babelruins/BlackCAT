@@ -111,6 +111,8 @@ class main_window(QtWidgets.QMainWindow):
 		try:
 			settings = QtCore.QSettings("Babelruins.org", "BlackCAT")
 			self.recent_files = settings.value('recent_files', [])
+			if self.recent_files is None:
+				self.recent_files = []
 			self.resize(settings.value('width', type=int), settings.value('height', type=int))
 			self.move(settings.value('x_position', type=int), settings.value('y_position', type=int))
 			if settings.value('maximized', type=bool):
@@ -369,7 +371,7 @@ class main_window(QtWidgets.QMainWindow):
 					self.valid_files.append(file)
 					new_m_time = os.path.getmtime(file_path)
 					if file not in files_already_imported:
-						if os.path.splitext(file_path)[1] in [".txt", ".odt"]:
+						if os.path.splitext(file_path)[1] in [".txt", ".odt", ".sgml"]:
 							QtWidgets.QApplication.processEvents()
 							self.status_label.setText("Importing file '" + file_path + "'.")
 							self.import_file_into_project(file_path, new_m_time)
@@ -478,7 +480,10 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget.source_text.setText('')
 		self.main_widget.target_text.setText('')
 		self.main_widget.main_h_splitter.setEnabled(False)
-		self.build_menu(list(dict.fromkeys(self.recent_files))[:10], False)
+		if self.recent_files is not None:
+			self.build_menu(list(dict.fromkeys(self.recent_files))[:10], False)
+		else:
+			self.build_menu(None, False)
 		
 		#Reset the global variables
 		self.filename = ''
@@ -522,6 +527,8 @@ class main_window(QtWidgets.QMainWindow):
 			text_processors.punkt.import_file(self, text_processor_options)
 		elif file_extension == ".odt":
 			text_processors.odt.import_file(self, text_processor_options)
+		elif file_extension == ".sgml":
+			text_processors.sgml.import_file(self, text_processor_options)
 		else:
 			print("Unsupported file with extension " + file_extension)
 		
@@ -597,6 +604,9 @@ class main_window(QtWidgets.QMainWindow):
 							self.text_process_threads[file].start()
 						elif files_already_imported[file] == "odt":
 							self.text_process_threads[file] = text_processors.odt.file_generate_thread(text_processor_options, lambda file=file: self.generate_translated_file_on_progress(file), self)
+							self.text_process_threads[file].start()
+						elif files_already_imported[file] == "sgml":
+							self.text_process_threads[file] = text_processors.sgml.file_generate_thread(text_processor_options, lambda file=file: self.generate_translated_file_on_progress(file), self)
 							self.text_process_threads[file].start()
 						else:
 							self.text_process_threads[file] = True
