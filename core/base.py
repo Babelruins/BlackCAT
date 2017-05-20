@@ -657,7 +657,10 @@ class main_window(QtWidgets.QMainWindow):
 		settings.setValue('main_splitter_settings', self.main_widget.main_h_splitter.saveState())
 		settings.setValue('plugins_splitter_settings', self.main_widget.plugins_v_splitter.saveState())
 		settings.setValue('number_of_loaded_plugins', len(self.list_of_loaded_plugin_widgets))
-		settings.setValue('recent_files', list(dict.fromkeys(self.recent_files[::-1]))[:10])
+		if self.recent_files is not None:
+			settings.setValue('recent_files', list(dict.fromkeys(self.recent_files[::-1]))[:10])
 		del settings
 		
-		self.close_current_project()
+		#Save current file
+		if self.filename:
+			self.save_current_file()
