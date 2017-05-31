@@ -18,6 +18,7 @@ class plugin_thread(QtCore.QThread):
 		self.aborted = False
 	
 	def run(self):
+		limit = 20
 		tm_db = sqlite3.connect(self.options['project_file_path'])
 		tm_cursor = tm_db.cursor()
 		matching_segments = {}
@@ -49,8 +50,12 @@ class plugin_thread(QtCore.QThread):
 			return
 		
 		result = []
+		c = 0
 		for row in tm_cursor.execute(query, list_of_arguments):
 			result.append(row + (matching_segments[row[0]], ))
+			c = c + 1
+			if(c>=limit):
+				break
 
 		tm_db.close()
 		
@@ -155,6 +160,8 @@ class main_widget(QtWidgets.QGroupBox):
 		target_widget = QtWidgets.QTableWidgetItem()
 		target_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[2]))
 		self.candidates_box.setItem(index, 2, target_widget)
+		
+		QtWidgets.QApplication.processEvents()
 	
 	def onFinish(self, count):
 		self.candidates_box.setSortingEnabled(True)

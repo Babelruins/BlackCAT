@@ -52,10 +52,15 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget.main_editor_layout = QtWidgets.QVBoxLayout(self.main_widget.main_editor_groupbox)
 		
 		self.main_widget.main_editor = QtWidgets.QTableWidget(self)
-		self.main_widget.main_editor.setColumnCount(2)
-		self.main_widget.main_editor.setHorizontalHeaderLabels(["Source text", "Target text"])
-		self.main_widget.main_editor.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-		self.main_widget.main_editor.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+		self.main_widget.main_editor.setColumnCount(3)
+		self.main_widget.main_editor.setHorizontalHeaderLabels(["ID", "Source text", "Target text"])
+		#self.main_widget.main_editor.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+		#self.main_widget.main_editor.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+		table_header = self.main_widget.main_editor.horizontalHeader()
+		table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+		table_header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+		table_header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
+		self.main_widget.main_editor.verticalHeader().hide()
 		self.main_widget.main_editor.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
 		self.main_widget.main_editor.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
 		self.main_widget.main_editor.setFont(QtGui.QFont("Lucida Console"))
@@ -148,7 +153,7 @@ class main_window(QtWidgets.QMainWindow):
 		insert_tag_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+T"), self)
 		insert_tag_shortcut.activated.connect(self.insert_next_tag)
 		
-		self.main_widget.main_h_splitter.setEnabled(False)
+		#self.main_widget.main_h_splitter.setEnabled(False)
 	
 	def build_source_context_menu(self, pos):
 		self.main_widget.source_text.context_menu = self.main_widget.source_text.createStandardContextMenu()
@@ -280,12 +285,12 @@ class main_window(QtWidgets.QMainWindow):
 		#Save the previous string
 		if current_row >= 0 and hasattr(self, 'filename'):
 			if (previous_row >= 0) and (self.main_widget.target_text.toPlainText() != '') and (self.main_widget.target_text.toPlainText() != self.previous_translated_text):
-				self.main_widget.main_editor.item(previous_row, 1).setText(self.main_widget.target_text.toPlainText())
+				self.main_widget.main_editor.item(previous_row, 2).setText(self.main_widget.target_text.toPlainText())
 				options = {}
 				options['project_path'] = self.project_path
 				options['segment'] = self.main_widget.target_text.toPlainText()
 				options['target_language'] = self.target_language
-				options['source_segment'] = self.main_widget.main_editor.verticalHeaderItem(previous_row).text()
+				options['source_segment'] = self.main_widget.main_editor.item(previous_row, 0).text()
 				options['source_file'] = self.filename
 				save_variant_thread = db_op.db_save_variant_thread(options, self.save_variant_onFinish, self)
 				save_variant_thread.start()
@@ -294,15 +299,15 @@ class main_window(QtWidgets.QMainWindow):
 			
 			#Let's work on the current string
 			if current_row != previous_row:
-				self.main_widget.source_text.setText(self.main_widget.main_editor.item(current_row, 0).text())
-				self.main_widget.target_text.setText(self.main_widget.main_editor.item(current_row, 1).text())
-				self.previous_translated_text = self.main_widget.main_editor.item(current_row, 1).text()
+				self.main_widget.source_text.setText(self.main_widget.main_editor.item(current_row, 1).text())
+				self.main_widget.target_text.setText(self.main_widget.main_editor.item(current_row, 2).text())
+				self.previous_translated_text = self.main_widget.main_editor.item(current_row, 2).text()
 			
 			#Get the plugins to work
 			plugin_options = {}
 			plugin_options['project_file_path'] = self.project_path
 			plugin_options['filename'] = self.filename
-			plugin_options['segment_id'] = self.main_widget.main_editor.verticalHeaderItem(current_row).text()
+			plugin_options['segment_id'] = self.main_widget.main_editor.item(current_row, 0).text()
 			plugin_options['source_text'] = self.main_widget.source_text.toPlainText()
 			plugin_options['target_text'] = self.main_widget.target_text.toPlainText()
 			plugin_options['source_language'] = self.source_language
@@ -371,7 +376,7 @@ class main_window(QtWidgets.QMainWindow):
 					self.valid_files.append(file)
 					new_m_time = os.path.getmtime(file_path)
 					if file not in files_already_imported:
-						if os.path.splitext(file_path)[1] in [".txt", ".odt", ".sgml"]:
+						if os.path.splitext(file_path)[1] in [".txt", ".odt", ".sgml", ".po"]:
 							QtWidgets.QApplication.processEvents()
 							self.status_label.setText("Importing file '" + file_path + "'.")
 							self.import_file_into_project(file_path, new_m_time)
@@ -467,8 +472,8 @@ class main_window(QtWidgets.QMainWindow):
 	def save_current_file(self):
 		current_row = self.main_widget.main_editor.currentRow()
 		if current_row >= 0 and self.main_widget.target_text.toPlainText() != '':
-			db_op.save_variant(self, self.main_widget.target_text.toPlainText(), self.target_language, self.main_widget.main_editor.verticalHeaderItem(current_row).text(), self.filename)
-			self.main_widget.main_editor.item(current_row, 1).setText(self.main_widget.target_text.toPlainText())
+			db_op.save_variant(self, self.main_widget.target_text.toPlainText(), self.target_language, self.main_widget.main_editor.item(current_row, 0).text(), self.filename)
+			self.main_widget.main_editor.item(current_row, 2).setText(self.main_widget.target_text.toPlainText())
 			
 	def close_current_project(self):
 		#Save current file
@@ -479,7 +484,7 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget.main_editor.setRowCount(0)
 		self.main_widget.source_text.setText('')
 		self.main_widget.target_text.setText('')
-		self.main_widget.main_h_splitter.setEnabled(False)
+		#self.main_widget.main_h_splitter.setEnabled(False)
 		if self.recent_files is not None:
 			self.build_menu(list(dict.fromkeys(self.recent_files))[:10], False)
 		else:
@@ -529,6 +534,8 @@ class main_window(QtWidgets.QMainWindow):
 			text_processors.odt.import_file(self, text_processor_options)
 		elif file_extension == ".sgml":
 			text_processors.sgml.import_file(self, text_processor_options)
+		elif file_extension == ".po":
+			text_processors.gettext.import_file(self, text_processor_options)
 		else:
 			print("Unsupported file with extension " + file_extension)
 		
@@ -552,13 +559,21 @@ class main_window(QtWidgets.QMainWindow):
 	def open_file_onFinish(self, filename, result):
 		self.main_widget.main_editor.setRowCount(len(result))
 		for index, row in enumerate(result):
+			row_id = QtWidgets.QTableWidgetItem(str(row[0]))
 			row_source = QtWidgets.QTableWidgetItem(row[1])
 			row_target = QtWidgets.QTableWidgetItem(row[2])
+			if(row[2]==""):
+				row_id.setBackground(QtGui.QColor(255, 0, 0))
+			else:
+				if(row[3]==1):
+					row_id.setBackground(QtGui.QColor(255, 255, 0))
+				else:
+					row_id.setBackground(QtGui.QColor(0, 255, 0))
 			row_source.setTextAlignment(QtCore.Qt.AlignTop)
 			row_target.setTextAlignment(QtCore.Qt.AlignTop)
-			self.main_widget.main_editor.setVerticalHeaderItem(index, QtWidgets.QTableWidgetItem(str(row[0])))
-			self.main_widget.main_editor.setItem(index, 0, row_source)
-			self.main_widget.main_editor.setItem(index, 1, row_target)
+			self.main_widget.main_editor.setItem(index, 0, row_id)
+			self.main_widget.main_editor.setItem(index, 1, row_source)
+			self.main_widget.main_editor.setItem(index, 2, row_target)
 			self.status_label.setText("Openning file: " + filename + " (loading segment " + str(index + 1) + " of " + str(len(result)) + ")" )
 			QtWidgets.QApplication.processEvents()
 	
@@ -566,7 +581,7 @@ class main_window(QtWidgets.QMainWindow):
 		self.previous_translated_text = ''
 		self.main_widget.main_editor_groupbox.setTitle(filename)
 		
-		self.main_widget.main_h_splitter.setEnabled(True)
+		#self.main_widget.main_h_splitter.setEnabled(True)
 		self.status_label.setText("Ready.")
 		self.main_widget.target_text.setFocus()
 		

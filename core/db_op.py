@@ -85,7 +85,7 @@ class db_open_file_thread(QtCore.QThread):
 		project_db = sqlite3.connect(self.options['project_path'])
 		project_cursor = project_db.cursor()
 		result = []
-		for row in project_cursor.execute("""	SELECT source_segments.segment_id, source_segments.segment, variants.segment
+		for row in project_cursor.execute("""	SELECT source_segments.segment_id, source_segments.segment, variants.segment, variants.fuzzy
 												FROM source_segments
 												LEFT OUTER JOIN variants ON ((variants.source_segment = source_segments.segment_id) 
 													AND (variants.language = ?))
