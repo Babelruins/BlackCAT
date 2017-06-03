@@ -2,7 +2,7 @@ import sys, zipfile, sqlite3, os
 from bs4 import BeautifulSoup
 from PyQt5 import QtCore
 
-def import_file(self, options):
+def import_file(options):
 	filename = os.path.basename(options['file_path'])
 	sgml_file = open(options['file_path'])
 	soup = BeautifulSoup(sgml_file.read(), "html")
@@ -69,52 +69,40 @@ def import_file(self, options):
 	project_db.commit()
 	project_db.close()
 	
-class file_generate_thread(QtCore.QThread):
-	finished = QtCore.pyqtSignal()
+def generate_file(options):
+	filename = os.path.basename(options['file_path'])
+	project_db = sqlite3.connect(options['project_path'])
+	project_cursor = project_db.cursor()
 	
-	def __init__(self, options, callback, parent=None):
-		QtCore.QThread.__init__(self, parent)
-		
-		self.options = options
-		self.finished.connect(callback)
-		
-	def run(self):
-		options = self.options
-		filename = os.path.basename(options['file_path'])
-		project_db = sqlite3.connect(options['project_path'])
-		project_cursor = project_db.cursor()
-		
-		sentences_in_db = {}
-		for row in project_cursor.execute("""	SELECT source_segments.segment, variants.segment
-												FROM source_segments
-												LEFT OUTER JOIN variants ON (variants.source_segment = source_segments.segment_id AND variants.language = ? AND variants.source_file = ?)
-												WHERE source_segments.language = ?
-												AND source_segments.source_file = ?;""", (options['target_language'], filename, options['source_language'], filename)):
-			sentences_in_db[row[0]] = row[1]
+	sentences_in_db = {}
+	for row in project_cursor.execute("""	SELECT source_segments.segment, variants.segment
+											FROM source_segments
+											LEFT OUTER JOIN variants ON (variants.source_segment = source_segments.segment_id AND variants.language = ? AND variants.source_file = ?)
+											WHERE source_segments.language = ?
+											AND source_segments.source_file = ?;""", (options['target_language'], filename, options['source_language'], filename)):
+		sentences_in_db[row[0]] = row[1]
 
-		sgml_file = open(options['file_path'])
-		soup = BeautifulSoup(sgml_file.read(), "html")
-		sgml_file.close()
+	sgml_file = open(options['file_path'])
+	soup = BeautifulSoup(sgml_file.read(), "html")
+	sgml_file.close()
+	
+	search_tags = {'title':True, 'para':True, 'programlisting':True}
+	for seg in soup.find_all(search_tags):
+		parents = seg.find_parents(search_tags)
+		#Only get non-nested tags
+		if len(parents) == 0:
+			text_in_par = ''
+			for element in seg:
+				text_in_par = text_in_par + str(element)
+			if text_in_par:
+				if sentences_in_db[text_in_par] is not None:
+					seg.string = ''
+					sentence_soup = BeautifulSoup(sentences_in_db[text_in_par], 'lxml')
+					for sentence_element in sentence_soup.p:
+						seg.append(sentence_element)
 		
-		search_tags = {'title':True, 'para':True, 'programlisting':True}
-		for seg in soup.find_all(search_tags):
-			parents = seg.find_parents(search_tags)
-			#Only get non-nested tags
-			if len(parents) == 0:
-				text_in_par = ''
-				for element in seg:
-					text_in_par = text_in_par + str(element)
-				if text_in_par:
-					if sentences_in_db[text_in_par] is not None:
-						seg.string = ''
-						sentence_soup = BeautifulSoup(sentences_in_db[text_in_par], 'lxml')
-						for sentence_element in sentence_soup.p:
-							seg.append(sentence_element)
-			
-		project_db.close()
-		
-		target_file = open(os.path.join(options['project_dir'], 'processed_files', filename), 'w')
-		target_file.write(soup.prettify())
-		target_file.close()
-		
-		self.finished.emit()
+	project_db.close()
+	
+	target_file = open(os.path.join(options['project_dir'], 'processed_files', filename), 'w')
+	target_file.write(soup.prettify())
+	target_file.close()

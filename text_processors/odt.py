@@ -2,7 +2,7 @@ import sys, zipfile, sqlite3, os
 from bs4 import BeautifulSoup
 from PyQt5 import QtCore
 
-def import_file(self, options):
+def import_file(options):
 	filename = os.path.basename(options['file_path'])
 	odt_file = zipfile.ZipFile(options['file_path'])
 	odt_xml = odt_file.open("content.xml")
@@ -22,8 +22,9 @@ def import_file(self, options):
 	#Get the sentences in file
 	sentences_in_file = []
 	for par in soup.find('text').find_all({'h': True, 'p' : True}):
+		#print(par.contents)
 		text = ''
-		for element in par:
+		for element in par.contents:
 			text = text + str(element)
 		if text:
 			sentences_in_file.append(text)
@@ -65,56 +66,49 @@ def import_file(self, options):
 	odt_file.close()
 	project_db.commit()
 	project_db.close()
-	
-class file_generate_thread(QtCore.QThread):
-	finished = QtCore.pyqtSignal()
-	
-	def __init__(self, options, callback, parent=None):
-		QtCore.QThread.__init__(self, parent)
-		
-		self.options = options
-		self.finished.connect(callback)
-		
-	def run(self):
-		options = self.options
-		filename = os.path.basename(options['file_path'])
-		project_db = sqlite3.connect(options['project_path'])
-		project_cursor = project_db.cursor()
-		
-		sentences_in_db = {}
-		for row in project_cursor.execute("""	SELECT source_segments.segment, variants.segment
-												FROM source_segments
-												LEFT OUTER JOIN variants ON (variants.source_segment = source_segments.segment_id AND variants.language = ? AND variants.source_file = ?)
-												WHERE source_segments.language = ?
-												AND source_segments.source_file = ?;""", (options['target_language'], filename, options['source_language'], filename)):
-			sentences_in_db[row[0]] = row[1]
 
-		odt_file = zipfile.ZipFile(options['file_path'])
-		odt_xml = odt_file.open("content.xml")
-		soup = BeautifulSoup(odt_xml.read(), "xml")
-		
-		for par in soup.find('text').find_all({'h': True, 'p' : True}):
-			text_in_par = ''
-			for element in par:
-				text_in_par = text_in_par + str(element)
-			if text_in_par:
-				if sentences_in_db[text_in_par] is not None:
-					#par.string = sentences_in_db[text_in_par]
-					par.string = ''
-					sentence_soup = BeautifulSoup(sentences_in_db[text_in_par], 'lxml')
-					for sentence_element in sentence_soup.p:
-						par.append(sentence_element)
-			
-		project_db.close()
-		
-		target_file = zipfile.ZipFile(os.path.join(options['project_dir'], 'processed_files', filename), 'w')
-		for file in odt_file.infolist():
-			if file.filename != "content.xml":
-				target_file.writestr(file, odt_file.read(file.filename))
-		
-		target_file.writestr("content.xml", soup.prettify())
-		
-		odt_file.close()
-		target_file.close()
-		
-		self.finished.emit()
+def obsolete_expand_xml_element(element):
+	if hasattr(element, 'contents'):
+		for content in element:
+			return expand_xml_element(content)
+	else:
+		return element.string
+	
+def generate_file(options):
+	filename = os.path.basename(options['file_path'])
+	project_db = sqlite3.connect(options['project_path'])
+	project_cursor = project_db.cursor()
+	
+	sentences_in_db = {}
+	for row in project_cursor.execute("""	SELECT source_segments.segment, variants.segment
+											FROM source_segments
+											LEFT OUTER JOIN variants ON (variants.source_segment = source_segments.segment_id AND variants.language = ? AND variants.source_file = ?)
+											WHERE source_segments.language = ?
+											AND source_segments.source_file = ?;""", (options['target_language'], filename, options['source_language'], filename)):
+		sentences_in_db[row[0]] = row[1]
+
+	odt_file = zipfile.ZipFile(options['file_path'])
+	odt_xml = odt_file.open("content.xml")
+	soup = BeautifulSoup(odt_xml.read(), "xml")
+	
+	for par in soup.find('text').find_all({'h': True, 'p' : True}):
+		text_in_par = ''
+		for element in par:
+			text_in_par = text_in_par + str(element)
+		if text_in_par:
+			if sentences_in_db[text_in_par] is not None:
+				par.clear()
+				segment_soup = BeautifulSoup(sentences_in_db[text_in_par], 'html.parser')
+				par.append(segment_soup)
+
+	project_db.close()
+	
+	target_file = zipfile.ZipFile(os.path.join(options['project_dir'], 'processed_files', filename), 'w')
+	for file in odt_file.infolist():
+		if file.filename != "content.xml":
+			target_file.writestr(file, odt_file.read(file.filename))
+	
+	target_file.writestr("content.xml", soup.prettify())
+	
+	odt_file.close()
+	target_file.close()

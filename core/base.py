@@ -24,6 +24,33 @@ class tags_highlighter(QtGui.QSyntaxHighlighter):
 				length = expression.matchedLength()
 				self.setFormat(index, length, format)
 				index = expression.indexIn(text, index + length)
+				
+class generate_translated_files_thread(QtCore.QThread):
+	finished = QtCore.pyqtSignal()
+	
+	def __init__(self, options, callback, parent=None):
+		QtCore.QThread.__init__(self, parent)
+		self.options = options
+		self.finished.connect(callback)
+
+	def run(self):
+		files_already_imported = db_op.get_imported_files(self.options['project_path'])
+		for file in self.options['source_file_dir']:
+			file_path = os.path.join(self.options['project_dir'], 'source_files', file)
+			if (os.path.isfile(file_path)):
+				if file in files_already_imported:
+					self.options['file_path'] = file_path
+					if files_already_imported[file] == "punkt":
+						text_processors.punkt.generate_file(self.options)
+					elif files_already_imported[file] == "odt":
+						text_processors.odt.generate_file(self.options)
+					elif files_already_imported[file] == "sgml":
+						text_processors.sgml.generate_file(self.options)
+					elif files_already_imported[file] == "gettext":
+						text_processors.gettext.generate_file(self.options)
+					else:
+						print("Unsupported generate method " + files_already_imported[file])
+		self.finished.emit()
 
 class main_window(QtWidgets.QMainWindow):
 	def __init__(self):
@@ -529,13 +556,13 @@ class main_window(QtWidgets.QMainWindow):
 		file_extension = os.path.splitext(file_path)[1]
 		
 		if file_extension == ".txt":
-			text_processors.punkt.import_file(self, text_processor_options)
+			text_processors.punkt.import_file(text_processor_options)
 		elif file_extension == ".odt":
-			text_processors.odt.import_file(self, text_processor_options)
+			text_processors.odt.import_file(text_processor_options)
 		elif file_extension == ".sgml":
-			text_processors.sgml.import_file(self, text_processor_options)
+			text_processors.sgml.import_file(text_processor_options)
 		elif file_extension == ".po":
-			text_processors.gettext.import_file(self, text_processor_options)
+			text_processors.gettext.import_file(text_processor_options)
 		else:
 			print("Unsupported file with extension " + file_extension)
 		
@@ -562,7 +589,7 @@ class main_window(QtWidgets.QMainWindow):
 			row_id = QtWidgets.QTableWidgetItem(str(row[0]))
 			row_source = QtWidgets.QTableWidgetItem(row[1])
 			row_target = QtWidgets.QTableWidgetItem(row[2])
-			if(row[2]==""):
+			if(row[2]=="" or row[2] is None):
 				row_id.setBackground(QtGui.QColor(255, 0, 0))
 			else:
 				if(row[3]==1):
@@ -588,44 +615,24 @@ class main_window(QtWidgets.QMainWindow):
 		self.update_status_bar_file()
 		
 	def generate_translated_files(self):
-		#Get the list of the files at source_files that were already imported to the project
-		project_db = sqlite3.connect(self.project_path)
-		project_cursor = project_db.cursor()
-		files_already_imported = {}
-		for row in project_cursor.execute("SELECT name, proc_algorithm FROM source_files;"):
-			files_already_imported[row[0]] = row[1]
-		project_db.close()
-		
+		files_already_imported = db_op.get_imported_files(self.project_path)
 		#Check the items in source_file dir
 		source_file_dir = os.listdir(os.path.join(self.project_dir, 'source_files'))
+		options = {}
+		options['project_dir'] = self.project_dir
+		options['project_path'] = self.project_path
+		options['source_language'] = self.source_language
+		options['target_language'] = self.target_language
+		options['source_file_dir'] = source_file_dir
+		options['files_to_process'] = []
 		if source_file_dir:
-			self.text_process_threads = {}
-			for file in source_file_dir:
-				self.text_process_threads[file] = None
 			for file in source_file_dir:
 				file_path = os.path.join(self.project_dir, 'source_files', file)
 				if (os.path.isfile(file_path)):
 					if file in files_already_imported:
-					
-						text_processor_options = {}
-						text_processor_options['project_dir'] = self.project_dir
-						text_processor_options['project_path'] = self.project_path
-						text_processor_options['file_path'] = file_path
-						text_processor_options['source_language'] = self.source_language
-						text_processor_options['target_language'] = self.target_language
-			
-						if files_already_imported[file] == "punkt":
-							self.text_process_threads[file] = text_processors.punkt.file_generate_thread(text_processor_options, lambda file=file: self.generate_translated_file_on_progress(file), self)
-							self.text_process_threads[file].start()
-						elif files_already_imported[file] == "odt":
-							self.text_process_threads[file] = text_processors.odt.file_generate_thread(text_processor_options, lambda file=file: self.generate_translated_file_on_progress(file), self)
-							self.text_process_threads[file].start()
-						elif files_already_imported[file] == "sgml":
-							self.text_process_threads[file] = text_processors.sgml.file_generate_thread(text_processor_options, lambda file=file: self.generate_translated_file_on_progress(file), self)
-							self.text_process_threads[file].start()
-						else:
-							self.text_process_threads[file] = True
-							print("Unsupported generate method " + files_already_imported[file])
+						options['files_to_process'].append(file_path)
+			generate_thread = generate_translated_files_thread(options, self.generate_translated_files_on_finish, self)
+			generate_thread.start()
 			
 		else:
 			error_message_box = QtWidgets.QMessageBox()
@@ -633,15 +640,11 @@ class main_window(QtWidgets.QMainWindow):
 			error_message_box.setIcon(QtWidgets.QMessageBox.Critical)
 			error_message_box.exec_()
 		
-	def generate_translated_file_on_progress(self, file):
-		if hasattr(self.text_process_threads[file], 'isFinished'):
-			if self.text_process_threads[file].isFinished:
-				self.text_process_threads[file] = True
-		if all(thread == True for thread in self.text_process_threads.values()):
-			info_box = QtWidgets.QMessageBox()
-			info_box.setText("Target files generated.")
-			info_box.setIcon(QtWidgets.QMessageBox.Information)
-			info_box.exec_()
+	def generate_translated_files_on_finish(self):
+		info_box = QtWidgets.QMessageBox()
+		info_box.setText("Target files generated.")
+		info_box.setIcon(QtWidgets.QMessageBox.Information)
+		info_box.exec_()
 		
 	def import_tm(self):
 		tm_file_name_list = QtWidgets.QFileDialog.getOpenFileNames(self, 'Import translation memory files', '', 'Any Supported File (*.tmx, *.po);;Translation Memory eXchange (*.tmx);;PO files (*.po)')[0]

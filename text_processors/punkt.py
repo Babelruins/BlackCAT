@@ -1,7 +1,7 @@
 import nltk.data, sqlite3, os, chardet, pycountry
 from PyQt5 import QtCore
 
-def import_file(self, options):
+def import_file(options):
 	#First lets try to detect the encoding
 	file = open(options['file_path'], 'rb')
 	detected_encoding = chardet.detect(file.read())['encoding']
@@ -76,63 +76,53 @@ def import_file(self, options):
 	project_db.commit()
 	project_db.close()
 		
-class file_generate_thread(QtCore.QThread):
-	finished = QtCore.pyqtSignal()
+def generate_file(options):
+	filename = os.path.basename(options['file_path'])
+	project_db = sqlite3.connect(options['project_path'])
+	project_cursor = project_db.cursor()
 	
-	def __init__(self, options, callback, parent=None):
-		QtCore.QThread.__init__(self, parent)
+	sentences_in_db = {}
+	for row in project_cursor.execute("""	SELECT source_segments.segment, variants.segment
+											FROM source_segments
+											LEFT OUTER JOIN variants ON (variants.source_segment = source_segments.segment_id AND variants.language = ? AND variants.source_file = ?)
+											WHERE source_segments.language = ?
+											AND source_segments.source_file = ?;""", (options['target_language'], filename, options['source_language'], filename)):
+		sentences_in_db[row[0]] = row[1]
 		
-		self.options = options
-		self.finished.connect(callback)
-		
-	def run(self):
-		options = self.options
-		filename = os.path.basename(options['file_path'])
-		project_db = sqlite3.connect(options['project_path'])
-		project_cursor = project_db.cursor()
-		
-		sentences_in_db = {}
-		for row in project_cursor.execute("""	SELECT source_segments.segment, variants.segment
-												FROM source_segments
-												LEFT OUTER JOIN variants ON (variants.source_segment = source_segments.segment_id AND variants.language = ? AND variants.source_file = ?)
-												WHERE source_segments.language = ?
-												AND source_segments.source_file = ?;""", (options['target_language'], filename, options['source_language'], filename)):
-			sentences_in_db[row[0]] = row[1]
-			
-		encoding = project_cursor.execute("SELECT encoding FROM source_files WHERE name = ?", (filename, )).fetchone()[0]
+	encoding = project_cursor.execute("SELECT encoding FROM source_files WHERE name = ?", (filename, )).fetchone()[0]
 
-		#Select appropriate tokenizer according to language
-		punkt_languages = ['cs', 'da', 'nl', 'en', 'et', 'fi', 'fr', 'de', 'it', 'no', 'pl', 'pt', 'es', 'sv', 'tr']
-		if options['source_language'] in punkt_languages:
-			tokenizer = nltk.data.load('tokenizers/punkt/' + pycountry.languages.get(alpha_2=options['source_language']).name.lower() + '.pickle')
-		elif options['source_language'] == 'el':
-			tokenizer = nltk.data.load('tokenizers/punkt/greek.pickle')
-		elif options['source_language'] == 'sl':
-			tokenizer = nltk.data.load('tokenizers/punkt/slovene.pickle')
-		elif options['source_language'] == 'ja':
-			tokenizer = nltk.RegexpTokenizer(u'[^ 「」!?。．）]*[!?。]')
+	#Select appropriate tokenizer according to language
+	punkt_languages = ['cs', 'da', 'nl', 'en', 'et', 'fi', 'fr', 'de', 'it', 'no', 'pl', 'pt', 'es', 'sv', 'tr']
+	lang = pycountry.languages.get(alpha_2='en')
+	lang = pycountry.languages.get(alpha_2=options['source_language'])
+	if options['source_language'] in punkt_languages:
+		tokenizer = nltk.data.load('tokenizers/punkt/' + lang.name.lower() + '.pickle')
+	elif options['source_language'] == 'el':
+		tokenizer = nltk.data.load('tokenizers/punkt/greek.pickle')
+	elif options['source_language'] == 'sl':
+		tokenizer = nltk.data.load('tokenizers/punkt/slovene.pickle')
+	elif options['source_language'] == 'ja':
+		tokenizer = nltk.RegexpTokenizer(u'[^ 「」!?。．）]*[!?。]')
+	else:
+		tokenizer = nltk.LineTokenizer(blanklines='keep')
+	
+	file = open(options['file_path'], encoding=encoding)
+	text = file.read()
+	translated_data = ''
+	sentences = tokenizer.tokenize(text)
+	positions = tokenizer.span_tokenize(text)
+	last_sentence_ending_position = 0
+	for sentence, position in zip(sentences, positions):
+		translated_data = translated_data + text[last_sentence_ending_position:position[0]]
+		#if not hasattr(sentences_in_db, 'sentence'):
+		if sentences_in_db[sentence] is None:
+			translated_data = translated_data + sentence
 		else:
-			tokenizer = nltk.LineTokenizer(blanklines='keep')
-		
-		file = open(options['file_path'], encoding=encoding)
-		text = file.read()
-		translated_data = ''
-		sentences = tokenizer.tokenize(text)
-		positions = tokenizer.span_tokenize(text)
-		last_sentence_ending_position = 0
-		for sentence, position in zip(sentences, positions):
-			translated_data = translated_data + text[last_sentence_ending_position:position[0]]
-			#if not hasattr(sentences_in_db, 'sentence'):
-			if sentences_in_db[sentence] is None:
-				translated_data = translated_data + sentence
-			else:
-				translated_data = translated_data + sentences_in_db[sentence]
-			last_sentence_ending_position = position[1]
-		project_db.close()
-		file.close()
-		
-		target_file = open(os.path.join(options['project_dir'], 'processed_files', filename), 'w', encoding='utf-8')
-		target_file.write(translated_data)
-		target_file.close()
-		
-		self.finished.emit()
+			translated_data = translated_data + sentences_in_db[sentence]
+		last_sentence_ending_position = position[1]
+	project_db.close()
+	file.close()
+	
+	target_file = open(os.path.join(options['project_dir'], 'processed_files', filename), 'w', encoding='utf-8')
+	target_file.write(translated_data)
+	target_file.close()

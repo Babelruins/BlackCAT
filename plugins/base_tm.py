@@ -87,8 +87,6 @@ class main_widget(QtWidgets.QGroupBox):
 		
 		main_layout.addWidget(self.candidates_box, 0, 0)
 		main_layout.addLayout(status_layout, 1, 0)
-		
-		self.on_finish_running = False
 	
 	def contextMenuEvent(self, pos):
 		self.target_text = self.parent().parent().parent().target_text
@@ -131,13 +129,10 @@ class main_widget(QtWidgets.QGroupBox):
 	
 	def onFinish(self, result):
 		self.candidates_box.setSortingEnabled(False)
-		on_finish_running = True
 		total = str(len(result))
-		#self.candidates_box.setRowCount(0)
 		self.candidates_box.setRowCount(len(result))
 		for index, row in enumerate(result):
 			if index > self.candidates_box.rowCount():
-				print(index, self.candidates_box.rowCount())
 				return
 			percent_widget = QtWidgets.QTableWidgetItem()
 			percent_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[4]))

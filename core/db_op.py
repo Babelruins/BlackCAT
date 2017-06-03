@@ -55,6 +55,36 @@ def save_variant(self, segment, language, source_segment, source_file):
 	project_db.close()
 	self.main_status_bar.showMessage("Segment #" + str(source_segment) + " saved.", 3000)
 	
+def get_segments_in_db(project_path, source_language, target_language, filename):
+	project_db = sqlite3.connect(project_path)
+	project_cursor = project_db.cursor()
+	segments_in_db = {}
+	for row in project_cursor.execute("""	SELECT source_segments.segment, variants.segment, variants.fuzzy
+											FROM source_segments
+											LEFT OUTER JOIN variants ON (variants.source_segment = source_segments.segment_id AND variants.language = ? AND variants.source_file = ?)
+											WHERE source_segments.language = ?
+											AND source_segments.source_file = ?;""", (target_language, filename, source_language, filename)):
+		segments_in_db[row[0]] = [row[1], row[2]]
+	project_db.close()
+	return segments_in_db
+	
+def get_encoding(self, project_path, filename):
+	project_db = sqlite3.connect(project_path)
+	project_cursor = project_db.cursor()
+	encoding = project_cursor.execute("SELECT encoding FROM source_files WHERE name = ?", (filename, )).fetchone()[0]
+	project_db.close()
+	return encoding
+
+#Gets the list of the files at source_files that were already imported to the project
+def get_imported_files(project_path):
+	project_db = sqlite3.connect(project_path)
+	project_cursor = project_db.cursor()
+	files_already_imported = {}
+	for row in project_cursor.execute("SELECT name, proc_algorithm FROM source_files;"):
+		files_already_imported[row[0]] = row[1]
+	project_db.close()
+	return files_already_imported
+	
 class db_save_variant_thread(QtCore.QThread):
 	finished = QtCore.pyqtSignal(object)
 	
