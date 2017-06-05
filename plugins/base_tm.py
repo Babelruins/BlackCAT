@@ -1,5 +1,6 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 from fuzzywuzzy import fuzz
+from core import db_op
 
 class plugin_thread(QtCore.QThread):
 	finished = QtCore.pyqtSignal(object)

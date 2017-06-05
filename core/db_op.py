@@ -168,7 +168,7 @@ def get_translation_memory(project_path, segment_id, source_language, target_lan
 	project_db = sqlite3.connect(project_path)
 	project_cursor = project_db.cursor()
 	matching_segments = {}
-	for row in tm_cursor.execute("""	SELECT source_segments.segment_id, source_segments.segment
+	for row in project_cursor.execute("""	SELECT source_segments.segment_id, source_segments.segment
 										FROM source_segments
 										JOIN variants ON variants.source_segment = source_segments.segment_id
 										WHERE source_segments.language = ?""", (source_language, )):

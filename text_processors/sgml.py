@@ -1,6 +1,7 @@
 import sys, zipfile, os
 from bs4 import BeautifulSoup
 from PyQt5 import QtCore
+from core import db_op
 
 def import_file(options):
 	filename = os.path.basename(options['file_path'])
@@ -29,7 +30,7 @@ def import_file(options):
 			db_op.recycle_segment(options['project_path'], imported_segments[row])
 	
 	#Add the file to the source_files table
-	db_op.import_source_file(options['project_path'], filename, 'punkt', options['m_time'])
+	db_op.import_source_file(options['project_path'], filename, 'sgml', options['m_time'])
 	
 	#Insert the new sentences
 	seen = set()
