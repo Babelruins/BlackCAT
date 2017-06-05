@@ -6,7 +6,7 @@ from core import db_op
 def import_file(options):
 	filename = os.path.basename(options['file_path'])
 	sgml_file = open(options['file_path'])
-	soup = BeautifulSoup(sgml_file.read(), "html")
+	soup = BeautifulSoup(sgml_file.read(), "html.parser")
 	sgml_file.close()
 
 	imported_segments = db_op.get_source_segments_in_db(options['project_path'], options['source_language'], filename)
@@ -45,7 +45,7 @@ def generate_file(options):
 	segments_in_db = db_op.get_segments_in_db(options['project_path'], options['source_language'], options['target_language'], filename)
 
 	sgml_file = open(options['file_path'])
-	soup = BeautifulSoup(sgml_file.read(), "html")
+	soup = BeautifulSoup(sgml_file.read(), "html.parser")
 	sgml_file.close()
 	
 	search_tags = {'title':True, 'para':True, 'programlisting':True}
