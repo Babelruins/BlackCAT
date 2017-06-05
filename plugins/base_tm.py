@@ -1,6 +1,5 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 from fuzzywuzzy import fuzz
-import sqlite3, os
 
 class plugin_thread(QtCore.QThread):
 	finished = QtCore.pyqtSignal(object)
@@ -14,43 +13,10 @@ class plugin_thread(QtCore.QThread):
 		self.aborted = False
 	
 	def run(self):
-		tm_db = sqlite3.connect(self.options['project_file_path'])
-		tm_cursor = tm_db.cursor()
-		matching_segments = {}
-		for row in tm_cursor.execute("""	SELECT source_segments.segment_id, source_segments.segment
-											FROM source_segments
-											JOIN variants ON variants.source_segment = source_segments.segment_id
-											WHERE source_segments.language = ?""", (self.options['source_language'], )):
-			ratio = fuzz.ratio(self.options['source_text'], row[1])
-			if  ratio > 60:
-				matching_segments[row[0]] = ratio
-
-		if self.aborted:
-			return
-
-		list_of_arguments = list(matching_segments.keys())
-		placeholder = '?'
-		placeholders = ', '.join(placeholder for x in list_of_arguments)
-		query = """	SELECT source_segments.segment_id, source_segments.segment, variants.segment, variants.source_file
-					FROM variants
-					JOIN source_segments ON variants.source_segment = source_segments.segment_id
-					WHERE source_segments.segment_id IN ({})
-					AND variants.language = ?
-					AND NOT (variants.source_file == ? AND variants.source_segment == ?);""".format(placeholders)
-		list_of_arguments.append(self.options['target_language'])
-		list_of_arguments.append(self.options['filename'])
-		list_of_arguments.append(self.options['segment_id'])
-		
-		result = []
-		for row in tm_cursor.execute(query, list_of_arguments):
-			result.append(row + (matching_segments[row[0]], ))
-			if self.aborted:
-				break
-
-		tm_db.close()
+		matching_segments = db_op.get_translation_memory(self.options['project_file_path'], self.options['segment_id'], self.options['source_language'], self.options['target_language'], self.options['source_text'], self.options['filename'], 70)
 		
 		if not self.aborted:
-			self.finished.emit(result)
+			self.finished.emit(matching_segments)
 
 class main_widget(QtWidgets.QGroupBox):
 	def __init__(self):

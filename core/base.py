@@ -1,5 +1,5 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
-import configparser, nltk.data, sqlite3, os, functools, webbrowser, re
+import configparser, nltk.data, os, functools, webbrowser, re
 from core import dialogs, db_op
 import text_processors, plugins
 from bs4 import BeautifulSoup
@@ -373,19 +373,12 @@ class main_window(QtWidgets.QMainWindow):
 		self.project_path = os.path.abspath(project_path)
 		self.project_dir = os.path.dirname(self.project_path)
 		
-		project_db = sqlite3.connect(self.project_path)
-		project_cursor = project_db.cursor()
-		
 		#Get the settings
-		project_cursor.execute("SELECT value FROM project_settings WHERE key = 'source_language'")
-		self.source_language = project_cursor.fetchone()[0]
-		project_cursor.execute("SELECT value FROM project_settings WHERE key = 'target_language'")
-		self.target_language = project_cursor.fetchone()[0]
+		self.source_language = db_op.get_setting(self.project_path, 'source_language')
+		self.target_language = db_op.get_setting(self.project_path, 'target_language')
 		
 		#Get the list of the files at source_files that were already imported to the project
-		files_already_imported = {}
-		for row in project_cursor.execute("SELECT name, m_time FROM source_files;"):
-			files_already_imported[row[0]] = row[1]
+		files_already_imported = db_op.get_imported_files_mtime(self.project_path)
 			
 		#Save in recent files
 		self.recent_files.append(self.project_path)
@@ -419,41 +412,7 @@ class main_window(QtWidgets.QMainWindow):
 			#If a file has been deleted from the source_file dir but still in the database:
 			for file in files_already_imported:
 				if file not in self.valid_files:
-					#Get rid of segments with no translation
-					project_cursor.execute("""	DELETE
-												FROM source_segments
-												WHERE segment_id IN (
-													SELECT source_segments.segment_id
-													FROM source_segments
-													LEFT JOIN variants
-													ON variants.source_segment = source_segments.segment_id
-													WHERE variants.variant_id IS NULL
-													AND source_segments.source_file = ?)""", (file, ))
-
-					#For the rest of the segments, keep them as translation memory
-					project_cursor.execute("""	UPDATE source_segments
-												SET source_file = 'tm:' || source_file
-												WHERE segment_id IN (
-													SELECT source_segments.segment_id
-													FROM source_segments
-													LEFT JOIN variants
-													ON variants.source_segment = source_segments.segment_id
-													WHERE variants.variant_id IS NOT NULL
-													AND source_segments.source_file = ?)""", (file, ))
-													
-					project_cursor.execute("""	UPDATE variants
-												SET source_file = 'tm:' || source_file
-												WHERE source_segment IN (
-													SELECT source_segments.segment_id
-													FROM source_segments
-													LEFT JOIN variants
-													ON variants.source_segment = source_segments.segment_id
-													WHERE variants.variant_id IS NOT NULL
-													AND source_segments.source_file = ?)""", (file, ))
-					
-					#Delete reference to the deleted file from the db
-					project_cursor.execute("DELETE FROM source_files WHERE name = ?", (file, ) )
-					project_db.commit()
+					save_file_as_tm(self.project_path, file)
 			
 			self.status_label.setText("Ready.")
 			
@@ -466,8 +425,6 @@ class main_window(QtWidgets.QMainWindow):
 			error_message_box.setIcon(QtWidgets.QMessageBox.Critical)
 			error_message_box.exec_()
 			
-		project_db.close()
-		
 		#Get the project statistics	
 		self.update_status_bar_project()
 	
