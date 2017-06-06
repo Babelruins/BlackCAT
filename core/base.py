@@ -81,7 +81,6 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget.main_editor = QtWidgets.QTableWidget(self)
 		self.main_widget.main_editor.setColumnCount(3)
 		self.main_widget.main_editor.setHorizontalHeaderLabels(["ID", "Source text", "Target text"])
-		#self.main_widget.main_editor.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
 		#self.main_widget.main_editor.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
 		table_header = self.main_widget.main_editor.horizontalHeader()
 		table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
@@ -111,8 +110,10 @@ class main_window(QtWidgets.QMainWindow):
 		
 		self.main_widget.current_segment_groupbox = QtWidgets.QGroupBox()
 		self.main_widget.current_segment_layout = QtWidgets.QVBoxLayout(self.main_widget.current_segment_groupbox)
+		self.main_widget.fuzzy_checkbox = QtWidgets.QCheckBox("Fuzzy translation.")
 		self.main_widget.source_text_label = QtWidgets.QLabel("Original text:")
 		self.main_widget.target_text_label = QtWidgets.QLabel("Translated text:")
+		self.main_widget.current_segment_layout.addWidget(self.main_widget.fuzzy_checkbox)
 		self.main_widget.current_segment_layout.addWidget(self.main_widget.source_text_label)
 		self.main_widget.current_segment_layout.addWidget(self.main_widget.source_text)
 		self.main_widget.current_segment_layout.addWidget(self.main_widget.target_text_label)
@@ -312,13 +313,19 @@ class main_window(QtWidgets.QMainWindow):
 		#Save the previous string
 		if current_row >= 0 and hasattr(self, 'filename'):
 			if (previous_row >= 0) and (self.main_widget.target_text.toPlainText() != '') and (self.main_widget.target_text.toPlainText() != self.previous_translated_text):
+				#or ((self.main_widget.main_editor.item(current_row, 0).background().color() == QtGui.QColor(255, 255, 0)) != self.previous_fuzzy_status)):
 				self.main_widget.main_editor.item(previous_row, 2).setText(self.main_widget.target_text.toPlainText())
+				if self.main_widget.fuzzy_checkbox.isChecked():
+					self.main_widget.main_editor.item(previous_row, 0).setBackground(QtGui.QColor(255, 255, 0))
+				else:
+					self.main_widget.main_editor.item(previous_row, 0).setBackground(QtGui.QColor(0, 255, 0))
 				options = {}
 				options['project_path'] = self.project_path
 				options['segment'] = self.main_widget.target_text.toPlainText()
 				options['target_language'] = self.target_language
 				options['source_segment'] = self.main_widget.main_editor.item(previous_row, 0).text()
 				options['source_file'] = self.filename
+				options['fuzzy'] = self.main_widget.fuzzy_checkbox.isChecked()
 				save_variant_thread = db_op.db_save_variant_thread(options, self.save_variant_onFinish, self)
 				save_variant_thread.start()
 				self.update_status_bar_project()
@@ -329,6 +336,13 @@ class main_window(QtWidgets.QMainWindow):
 				self.main_widget.source_text.setText(self.main_widget.main_editor.item(current_row, 1).text())
 				self.main_widget.target_text.setText(self.main_widget.main_editor.item(current_row, 2).text())
 				self.previous_translated_text = self.main_widget.main_editor.item(current_row, 2).text()
+				current_segment_color = self.main_widget.main_editor.item(current_row, 0).background().color()
+				if(current_segment_color == QtGui.QColor(255, 255, 0)):
+					self.main_widget.fuzzy_checkbox.setChecked(True)
+					self.previous_fuzzy_status = True
+				else:
+					self.main_widget.fuzzy_checkbox.setChecked(False)
+					self.previous_fuzzy_status = False
 			
 			#Get the plugins to work
 			plugin_options = {}

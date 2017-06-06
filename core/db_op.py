@@ -246,7 +246,7 @@ class db_save_variant_thread(QtCore.QThread):
 	def run(self):
 		project_db = sqlite3.connect(self.options['project_path'])
 		project_cursor = project_db.cursor()
-		project_cursor.execute("INSERT OR REPLACE INTO variants (segment, language, source_segment, source_file) VALUES(?, ?, ?, ?);", (self.options['segment'], self.options['target_language'], self.options['source_segment'], self.options['source_file']))
+		project_cursor.execute("INSERT OR REPLACE INTO variants (segment, language, source_segment, source_file, fuzzy) VALUES(?, ?, ?, ?, ?);", (self.options['segment'], self.options['target_language'], self.options['source_segment'], self.options['source_file'], self.options['fuzzy']))
 		project_db.commit()
 		project_db.close()
 		self.finished.emit(self.options['source_segment'])

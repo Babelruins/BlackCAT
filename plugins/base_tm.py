@@ -14,7 +14,7 @@ class plugin_thread(QtCore.QThread):
 		self.aborted = False
 	
 	def run(self):
-		matching_segments = db_op.get_translation_memory(self.options['project_file_path'], self.options['segment_id'], self.options['source_language'], self.options['target_language'], self.options['source_text'], self.options['filename'], 70)
+		matching_segments = db_op.get_translation_memory(self.options['project_file_path'], self.options['segment_id'], self.options['source_language'], self.options['target_language'], self.options['source_text'], self.options['filename'], 60)
 		
 		if not self.aborted:
 			self.finished.emit(matching_segments)
@@ -54,6 +54,8 @@ class main_widget(QtWidgets.QGroupBox):
 		
 		main_layout.addWidget(self.candidates_box, 0, 0)
 		main_layout.addLayout(status_layout, 1, 0)
+		
+		self.limit = 50
 	
 	def contextMenuEvent(self, pos):
 		self.target_text = self.parent().parent().parent().target_text
@@ -96,11 +98,13 @@ class main_widget(QtWidgets.QGroupBox):
 	
 	def onFinish(self, result):
 		self.candidates_box.setSortingEnabled(False)
-		total = str(len(result))
-		self.candidates_box.setRowCount(len(result))
+		if len(result) >= self.limit:
+			total = self.limit
+		else:
+			total = len(result)
+		total_str = str(total)
+		self.candidates_box.setRowCount(total)
 		for index, row in enumerate(result):
-			if index > self.candidates_box.rowCount():
-				return
 			percent_widget = QtWidgets.QTableWidgetItem()
 			percent_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[4]))
 			if row[4] == 100:
@@ -121,7 +125,10 @@ class main_widget(QtWidgets.QGroupBox):
 			file_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[3]))
 			self.candidates_box.setItem(index, 3, file_widget)
 			
-			self.status_label.setText('Loading match ' + str(index + 1) + ' of ' + total + '.')
+			self.status_label.setText('Loading match ' + str(index + 1) + ' of ' + total_str + '.')
 			QtWidgets.QApplication.processEvents()
+			
+			if index + 1 >= self.limit:
+				break
 		self.candidates_box.setSortingEnabled(True)
 		self.status_label.setText('Ready.')
