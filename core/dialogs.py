@@ -110,3 +110,39 @@ class new_project_dialog(QtWidgets.QDialog):
 			error_message_box.setText("The following error ocurred while trying to create the project directory: " + str(e))
 			error_message_box.setIcon(QtWidgets.QMessageBox.Warning)
 			error_message_box.exec_()
+
+class status_dialog(QtWidgets.QDialog):
+	def __init__(self, title, message):
+		super(status_dialog, self).__init__()
+		
+		self.setWindowTitle(title)
+		self.setWindowFlags(QtCore.Qt.WindowTitleHint)
+		self.setWindowFlags(QtCore.Qt.WindowSystemMenuHint)
+		
+		layout = QtWidgets.QVBoxLayout(self)
+		layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
+		
+		self.main_message = QtWidgets.QLabel(message)
+		self.progress_bar = QtWidgets.QProgressBar()
+		self.progress_bar.setRange(0,0)
+		self.progress_bar.setMinimumWidth(350)
+		self.progress_bar.setAlignment(QtCore.Qt.AlignCenter)
+		self.textbox = QtWidgets.QTextEdit()
+		self.textbox.setReadOnly(True)
+		self.accept_button = QtWidgets.QPushButton("Close")
+		self.accept_button.clicked.connect(self.close)
+		self.accept_button.setEnabled(False)
+		
+		layout.addWidget(self.main_message)
+		layout.addWidget(self.progress_bar)
+		layout.addWidget(self.textbox)
+		layout.addWidget(self.accept_button)
+	
+	def add_text(self, text):
+		self.textbox.append(text)
+
+	def tasks_completed(self):
+		self.add_text("Done.")
+		self.progress_bar.setRange(0,1)
+		self.progress_bar.setValue(1)
+		self.accept_button.setEnabled(True)
