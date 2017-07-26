@@ -1,4 +1,4 @@
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets, QtCore, QtGui
 from core import db_op
 import pycountry, os
 
@@ -9,6 +9,7 @@ class file_picker_dialog(QtWidgets.QDialog):
 		self.setWindowTitle("Pick a file for translation")
 		self.setWindowFlags(QtCore.Qt.WindowTitleHint)
 		self.setWindowFlags(QtCore.Qt.WindowSystemMenuHint)
+		self.setWindowIcon(QtGui.QIcon('whitecat_256x256.png'))
 		
 		layout = QtWidgets.QVBoxLayout(self)
 		layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
@@ -39,6 +40,7 @@ class new_project_dialog(QtWidgets.QDialog):
 		self.setWindowTitle("New project")
 		self.setWindowFlags(QtCore.Qt.WindowTitleHint)
 		self.setWindowFlags(QtCore.Qt.WindowSystemMenuHint)
+		self.setWindowIcon(QtGui.QIcon('whitecat_256x256.png'))
 		
 		form_layout = QtWidgets.QFormLayout(self)
 		form_layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
@@ -118,6 +120,7 @@ class status_dialog(QtWidgets.QDialog):
 		self.setWindowTitle(title)
 		self.setWindowFlags(QtCore.Qt.WindowTitleHint)
 		self.setWindowFlags(QtCore.Qt.WindowSystemMenuHint)
+		self.setWindowIcon(QtGui.QIcon('whitecat_256x256.png'))
 		
 		layout = QtWidgets.QVBoxLayout(self)
 		layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)

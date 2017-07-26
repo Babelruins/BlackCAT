@@ -67,6 +67,63 @@ class generate_translated_files_thread(QtCore.QThread):
 					self.progress.emit("WARNING: File '" + file + "' has not been imported yet, it will not be processed.")
 		self.finished.emit()
 
+class import_files_thread(QtCore.QThread):
+	progress = QtCore.pyqtSignal(object)
+	finished = QtCore.pyqtSignal(object)
+	
+	def __init__(self, options, on_progress, on_finish, parent=None):
+		QtCore.QThread.__init__(self, parent)
+		self.options = options
+		self.progress.connect(on_progress)
+		self.finished.connect(on_finish)
+		
+	def run(self):
+		#If the item is a file and is not already imported, import it
+		valid_files = []
+		for file in self.options['source_file_dir']:
+			file_path = os.path.join(self.options['project_dir'], 'source_files', file)
+			if (os.path.isfile(file_path)):
+				valid_files.append(file)
+				new_m_time = os.path.getmtime(file_path)
+				if file not in self.options['files_already_imported']:
+					if os.path.splitext(file_path)[1] in [".txt", ".odt", ".sgml", ".po"]:
+						self.progress.emit("Importing file '" + file_path + "'.")
+						self.import_file_into_project(file_path, new_m_time)
+				else:
+					#Do the same for the files that have changed
+					if self.options['files_already_imported'][file] != new_m_time:
+						self.progress.emit("Re-importing file '" + file_path + "'.")
+						self.import_file_into_project(file_path, new_m_time)
+		
+		#If a file has been deleted from the source_file dir but still in the database:
+		for file in self.options['files_already_imported']:
+			if file not in valid_files:
+				save_file_as_tm(self.project_path, file)
+				
+		self.finished.emit(valid_files)
+	
+	def import_file_into_project(self, file_path, m_time):
+		text_processor_options = {}
+		text_processor_options['project_path'] = self.options['project_path']
+		text_processor_options['file_path'] = file_path
+		text_processor_options['source_language'] = self.options['source_language']
+		text_processor_options['target_language'] = self.options['target_language']
+		text_processor_options['m_time'] = m_time
+	
+		#first check file type
+		file_extension = os.path.splitext(file_path)[1]
+		
+		if file_extension == ".txt":
+			text_processors.punkt.import_file(text_processor_options)
+		elif file_extension == ".odt":
+			text_processors.odt.import_file(text_processor_options)
+		elif file_extension == ".sgml":
+			text_processors.sgml.import_file(text_processor_options)
+		elif file_extension == ".po":
+			text_processors.gettext.import_file(text_processor_options)
+		else:
+			self.progress.emit("Unsupported file with extension " + file_extension)
+
 class main_window(QtWidgets.QMainWindow):
 	def __init__(self):
 		super(main_window, self).__init__()
@@ -344,8 +401,6 @@ class main_window(QtWidgets.QMainWindow):
 				options['fuzzy'] = self.main_widget.fuzzy_checkbox.isChecked()
 				save_variant_thread = db_op.db_save_variant_thread(options, self.save_variant_onFinish, self)
 				save_variant_thread.start()
-				self.update_status_bar_project()
-				self.update_status_bar_file()
 			
 			#Let's work on the current string
 			if current_row != previous_row:
@@ -374,6 +429,8 @@ class main_window(QtWidgets.QMainWindow):
 				
 	def save_variant_onFinish(self, source_segment):
 		self.main_status_bar.showMessage("Segment #" + str(source_segment) + " saved.", 3000)
+		self.update_status_bar_file()
+		self.update_status_bar_project()
 	
 	def new_project(self):
 		new_project_dialog = dialogs.new_project_dialog()
@@ -416,37 +473,22 @@ class main_window(QtWidgets.QMainWindow):
 		self.setWindowTitle('BlackCAT - ' + str(self.project_path))
 		
 		#Check the items in source_file dir
-		self.valid_files = []
 		source_file_dir = os.listdir(os.path.join(self.project_dir, 'source_files'))
+		
+		options = {}
+		options['project_dir'] = self.project_dir
+		options['source_file_dir'] = source_file_dir
+		options['files_already_imported'] = files_already_imported
+		options['project_path'] = self.project_path
+		options['source_language'] = self.source_language
+		options['target_language'] = self.target_language
+		
 		if source_file_dir:
-			#If the item is a file and is not already imported, import it
-			for file in source_file_dir:
-				file_path = os.path.join(self.project_dir, 'source_files', file)
-				if (os.path.isfile(file_path)):
-					self.valid_files.append(file)
-					new_m_time = os.path.getmtime(file_path)
-					if file not in files_already_imported:
-						if os.path.splitext(file_path)[1] in [".txt", ".odt", ".sgml", ".po"]:
-							QtWidgets.QApplication.processEvents()
-							self.status_label.setText("Importing file '" + file_path + "'.")
-							self.import_file_into_project(file_path, new_m_time)
-					else:
-						#Do the same for the files that have changed
-						if files_already_imported[file] != new_m_time:
-							QtWidgets.QApplication.processEvents()
-							self.status_label.setText("Re-importing file '" + file_path + "'.")
-							self.import_file_into_project(file_path, new_m_time)
-			
-			self.status_label.setText("Performing cleanup actions")
-			
-			#If a file has been deleted from the source_file dir but still in the database:
-			for file in files_already_imported:
-				if file not in self.valid_files:
-					save_file_as_tm(self.project_path, file)
-			
-			self.status_label.setText("Ready.")
-			
-			#Call the file picker dialog
+			import_thread = import_files_thread(options, self.open_project_on_progress, self.open_project_on_finish, self)
+			self.status_msgbox = dialogs.status_dialog("Scan source files directory", "Processing files...")
+			#self.status_msgbox.show()
+			import_thread.start()
+			self.status_msgbox.exec_()
 			self.call_file_picker()
 			
 		else:
@@ -454,9 +496,16 @@ class main_window(QtWidgets.QMainWindow):
 			error_message_box.setText("No valid source files were found. Please copy some supported files in the source_files directory of the project and try opening it again.")
 			error_message_box.setIcon(QtWidgets.QMessageBox.Critical)
 			error_message_box.exec_()
-			
-		#Get the project statistics	
+
+	def open_project_on_progress(self, message):
+		self.status_msgbox.add_text(message)
+	
+	def open_project_on_finish(self, valid_files):
+		self.valid_files = valid_files
+		self.status_label.setText("Ready.")
 		self.update_status_bar_project()
+		self.status_msgbox.tasks_completed()
+		#self.call_file_picker()
 	
 	def update_status_bar_project(self):
 		options = {}
@@ -602,7 +651,6 @@ class main_window(QtWidgets.QMainWindow):
 		self.update_status_bar_file()
 		
 	def generate_translated_files(self):
-		#files_already_imported = db_op.get_imported_files(self.project_path)
 		#Check the items in source_file dir
 		source_file_dir = os.listdir(os.path.join(self.project_dir, 'source_files'))
 		options = {}
@@ -611,17 +659,14 @@ class main_window(QtWidgets.QMainWindow):
 		options['source_language'] = self.source_language
 		options['target_language'] = self.target_language
 		options['source_file_dir'] = source_file_dir
-		#options['files_to_process'] = []
 		if source_file_dir:
-			#for file in source_file_dir:
-			#	file_path = os.path.join(self.project_dir, 'source_files', file)
-			#	if (os.path.isfile(file_path)):
-			#		if file in files_already_imported:
-			#			options['files_to_process'].append(file_path)
 			generate_thread = generate_translated_files_thread(options, self.generate_translated_file_on_progress, self.generate_translated_files_on_finish, self)
-			self.status_msgbox = dialogs.status_dialog("Processing", "Generating files")
-			self.status_msgbox.show()
+			self.status_msgbox = dialogs.status_dialog("Generate translated files", "Generating files...")
+			#self.main_widget.setEnabled(False)
+			#self.menu_bar.setEnabled(False)
+			#self.status_msgbox.show()
 			generate_thread.start()
+			self.status_msgbox.exec_()
 			
 		else:
 			error_message_box = QtWidgets.QMessageBox()
@@ -633,12 +678,9 @@ class main_window(QtWidgets.QMainWindow):
 		self.status_msgbox.add_text(message)
 	
 	def generate_translated_files_on_finish(self):
-		#self.status_msgbox.close()
-		#info_box = QtWidgets.QMessageBox()
-		#info_box.setText("Target files generated.")
-		#info_box.setIcon(QtWidgets.QMessageBox.Information)
-		#info_box.exec_()
 		self.status_msgbox.tasks_completed()
+		#self.main_widget.setEnabled(True)
+		#self.menu_bar.setEnabled(True)
 		
 	def import_tm(self):
 		tm_file_name_list = QtWidgets.QFileDialog.getOpenFileNames(self, 'Import translation memory files', '', 'Any Supported File (*.tmx, *.po);;Translation Memory eXchange (*.tmx);;PO files (*.po)')[0]
