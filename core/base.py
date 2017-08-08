@@ -46,25 +46,25 @@ class generate_translated_files_thread(QtCore.QThread):
 						if files_already_imported[file] == "punkt":
 							self.progress.emit("Processing file '" + file + "' with 'punkt' processor...")
 							text_processors.punkt.generate_file(self.options)
-							self.progress.emit("Success!")
+							self.progress.emit('<font color="green">Success!</font>')
 						elif files_already_imported[file] == "odt":
 							self.progress.emit("Processing file '" + file + "' with 'odt' processor...")
 							text_processors.odt.generate_file(self.options)
-							self.progress.emit("Success!")
+							self.progress.emit('<font color="green">Success!</font>')
 						elif files_already_imported[file] == "sgml":
 							self.progress.emit("Processing file '" + file + "' with 'sgml' processor...")
 							text_processors.sgml.generate_file(self.options)
-							self.progress.emit("Success!")
+							self.progress.emit('<font color="green">Success!</font>')
 						elif files_already_imported[file] == "gettext":
 							self.progress.emit("Processing file '" + file + "' with 'gettext' processor...")
 							text_processors.gettext.generate_file(self.options)
-							self.progress.emit("Success!")
+							self.progress.emit('<font color="green">Success!</font>')
 						else:
 							self.progress.emit("ERROR: Unsupported generate method '" + files_already_imported[file] + "'for file '" + file + "'.")
 					except Exception as e:
-						self.progress.emit("ERROR: " + e)
+						self.progress.emit('<font color="red">' + type(e).__name__ + ': ' + str(e) + '</font>')
 				else:
-					self.progress.emit("WARNING: File '" + file + "' has not been imported yet, it will not be processed.")
+					self.progress.emit("<font color=\"orange\">WARNING: File '" + file + "' has not been imported yet, it will not be processed.</font>")
 		self.finished.emit()
 
 class import_files_thread(QtCore.QThread):
@@ -81,19 +81,26 @@ class import_files_thread(QtCore.QThread):
 		#If the item is a file and is not already imported, import it
 		valid_files = []
 		for file in self.options['source_file_dir']:
+			self.progress.emit("Processing '" + file + "' ...")
 			file_path = os.path.join(self.options['project_dir'], 'source_files', file)
 			if (os.path.isfile(file_path)):
 				valid_files.append(file)
 				new_m_time = os.path.getmtime(file_path)
 				if file not in self.options['files_already_imported']:
 					if os.path.splitext(file_path)[1] in [".txt", ".odt", ".sgml", ".po"]:
-						self.progress.emit("Importing file '" + file_path + "'.")
+						self.progress.emit("'" + file + "' has not been imported yet, processing ...")
 						self.import_file_into_project(file_path, new_m_time)
+					else:
+						self.progress.emit("Unsupported file extension '" + os.path.splitext(file_path)[1] + "'.")
 				else:
 					#Do the same for the files that have changed
 					if self.options['files_already_imported'][file] != new_m_time:
-						self.progress.emit("Re-importing file '" + file_path + "'.")
+						self.progress.emit("'" + file + "' has changed, processing ...")
 						self.import_file_into_project(file_path, new_m_time)
+					else:
+						self.progress.emit("'" + file + "' has not changed, skipping ...")
+			else:
+				self.progress.emit("'" + file + "' is not a file.")
 		
 		#If a file has been deleted from the source_file dir but still in the database:
 		for file in self.options['files_already_imported']:
@@ -112,32 +119,27 @@ class import_files_thread(QtCore.QThread):
 	
 		#first check file type
 		file_extension = os.path.splitext(file_path)[1]
-		
-		if file_extension == ".txt":
-			text_processors.punkt.import_file(text_processor_options)
-		elif file_extension == ".odt":
-			text_processors.odt.import_file(text_processor_options)
-		elif file_extension == ".sgml":
-			text_processors.sgml.import_file(text_processor_options)
-		elif file_extension == ".po":
-			text_processors.gettext.import_file(text_processor_options)
-		else:
-			self.progress.emit("Unsupported file with extension " + file_extension)
+		try:
+			if file_extension == ".txt":
+				text_processors.punkt.import_file(text_processor_options)
+				self.progress.emit("Success!")
+			elif file_extension == ".odt":
+				text_processors.odt.import_file(text_processor_options)
+				self.progress.emit("Success!")
+			elif file_extension == ".sgml":
+				text_processors.sgml.import_file(text_processor_options)
+				self.progress.emit("Success!")
+			elif file_extension == ".po":
+				text_processors.gettext.import_file(text_processor_options)
+				self.progress.emit("Success!")
+		except Exception as e:
+			self.progress.emit("ERROR: " + str(e))
 
 class main_window(QtWidgets.QMainWindow):
 	def __init__(self):
 		super(main_window, self).__init__()
 		
-		#Set the global variables
-		self.filename = ''
-		self.project_path = ''
-		self.project_dir = ''
-		self.valid_files = ''
-		self.source_language = ''
-		self.target_language = ''
-		self.previous_translated_text = ''
-		self.project_total_segments = 0
-		self.project_transtaled_segments = 0
+		self.reset_globals()
 		self.status_msgbox = None
 		
 		self.main_widget = QtWidgets.QWidget(self)
@@ -180,17 +182,20 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget.target_text.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 		self.main_widget.target_text.customContextMenuRequested.connect(self.build_target_context_menu)
 		target_text_highlighter = tags_highlighter(self.main_widget.target_text.document())
-		
+
 		self.main_widget.current_segment_groupbox = QtWidgets.QGroupBox()
 		self.main_widget.current_segment_layout = QtWidgets.QVBoxLayout(self.main_widget.current_segment_groupbox)
 		self.main_widget.fuzzy_checkbox = QtWidgets.QCheckBox("Fuzzy translation.")
-		self.main_widget.source_text_label = QtWidgets.QLabel("Original text:")
-		self.main_widget.target_text_label = QtWidgets.QLabel("Translated text:")
 		self.main_widget.current_segment_layout.addWidget(self.main_widget.fuzzy_checkbox)
-		self.main_widget.current_segment_layout.addWidget(self.main_widget.source_text_label)
-		self.main_widget.current_segment_layout.addWidget(self.main_widget.source_text)
-		self.main_widget.current_segment_layout.addWidget(self.main_widget.target_text_label)
-		self.main_widget.current_segment_layout.addWidget(self.main_widget.target_text)
+		
+		self.main_widget.current_segment_source_tab_widget = QtWidgets.QTabWidget()
+		self.main_widget.current_segment_layout.addWidget(self.main_widget.current_segment_source_tab_widget)
+		self.main_widget.current_segment_source_tab_widget.addTab(self.main_widget.source_text, "Original text")
+		
+		self.main_widget.current_segment_target_tab_widget = QtWidgets.QTabWidget()
+		self.main_widget.current_segment_layout.addWidget(self.main_widget.current_segment_target_tab_widget)
+		self.main_widget.current_segment_target_tab_widget.addTab(self.main_widget.target_text, "Translated text")
+		
 		self.main_widget.main_editor_layout.addWidget(self.main_widget.main_editor)
 		self.main_widget.editor_v_splitter.addWidget(self.main_widget.main_editor_groupbox)
 		self.main_widget.editor_v_splitter.addWidget(self.main_widget.current_segment_groupbox)
@@ -254,8 +259,48 @@ class main_window(QtWidgets.QMainWindow):
 		insert_tag_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+T"), self)
 		insert_tag_shortcut.activated.connect(self.insert_next_tag)
 		
-		#self.main_widget.main_h_splitter.setEnabled(False)
+		#Threads
+		self.db_thread = QtCore.QThread(self)
+		self.db_thread.start()
+		self.db_background_worker = db_op.db_worker()
+		self.db_background_worker.finished.connect(self.db_thread_on_finish)
+		self.db_background_worker.moveToThread(self.db_thread)
 	
+	def reset_globals(self):
+		self.filename = ''
+		self.project_path = ''
+		self.project_dir = ''
+		self.valid_files = ''
+		self.source_language = ''
+		self.target_language = ''
+		self.previous_translated_text = ''
+		self.previous_plurals = {}
+		self.project_total_segments = 0
+		self.project_transtaled_segments = 0
+		self.working_with_plurals = False
+		self.plurals = {}
+		self.max_plurals_in_file = 0
+	
+	def show_plural_controls(self, n):
+		plurals = []
+		plural_text_highlighters = []
+		for i in range(n):
+			plurals.append(QtWidgets.QTextEdit(self))
+			
+		for plural in plurals:
+			plural.setFont(QtGui.QFont("Lucida Console"))
+			plural.setAcceptRichText(False)
+			plural.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+			plural.customContextMenuRequested.connect(self.build_target_context_menu)
+			plural_text_highlighters.append(tags_highlighter(plural.document()))
+		
+		for i in range(n):
+			self.main_widget.current_segment_target_tab_widget.addTab(plurals[i], "Plural [" + str(i+1) + "]")
+	
+	def hide_plural_controls(self):
+		for i in range(self.main_widget.current_segment_target_tab_widget.count() - 1):
+			self.main_widget.current_segment_target_tab_widget.removeTab(1)
+
 	def build_source_context_menu(self, pos):
 		self.main_widget.source_text.context_menu = self.main_widget.source_text.createStandardContextMenu()
 		self.main_widget.source_text.context_menu.addSeparator()
@@ -382,31 +427,87 @@ class main_window(QtWidgets.QMainWindow):
 				text = parts[1]
 	
 	def main_editor_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
-		#print("Debug: previous_row=" + str(previous_row) + "; previous_column=" + str(previous_column) + "; current_row=" + str(current_row) + "; current_column=" + str(current_column))
-		#Save the previous string
-		if current_row >= 0 and hasattr(self, 'filename'):
-			if (previous_row >= 0) and (self.main_widget.target_text.toPlainText() != '') and (self.main_widget.target_text.toPlainText() != self.previous_translated_text):
-				#or ((self.main_widget.main_editor.item(current_row, 0).background().color() == QtGui.QColor(255, 255, 0)) != self.previous_fuzzy_status)):
-				self.main_widget.main_editor.item(previous_row, 2).setText(self.main_widget.target_text.toPlainText())
-				if self.main_widget.fuzzy_checkbox.isChecked():
-					self.main_widget.main_editor.item(previous_row, 0).setBackground(QtGui.QColor(255, 255, 0))
-				else:
-					self.main_widget.main_editor.item(previous_row, 0).setBackground(QtGui.QColor(0, 255, 0))
-				options = {}
-				options['project_path'] = self.project_path
-				options['segment'] = self.main_widget.target_text.toPlainText()
-				options['target_language'] = self.target_language
-				options['source_segment'] = self.main_widget.main_editor.item(previous_row, 0).text()
-				options['source_file'] = self.filename
-				options['fuzzy'] = self.main_widget.fuzzy_checkbox.isChecked()
-				save_variant_thread = db_op.db_save_variant_thread(options, self.save_variant_onFinish, self)
-				save_variant_thread.start()
+		#Check if we need to save the previous variant
+		save_variant = False
+		if previous_row >= 0:
+			if self.main_widget.target_text.toPlainText() != self.previous_translated_text:
+				save_variant = True
+
+			for i in range(self.main_widget.current_segment_target_tab_widget.count()):
+				if i > 0:
+					if self.previous_plurals[i] != self.main_widget.current_segment_target_tab_widget.widget(i).toPlainText():
+						save_variant = True
+			
+			previous_segment_color = self.main_widget.main_editor.item(previous_row, 0).background().color()
+			if(previous_segment_color == QtGui.QColor(255, 255, 0)):
+				previous_segment_new_fuzzy_status = True
+			else:
+				previous_segment_new_fuzzy_status = False
+				
+			if(self.previous_fuzzy_status != previous_segment_new_fuzzy_status):
+				save_variant = True
+					
+		if save_variant:
+			self.main_widget.main_editor.item(previous_row, 2).setText(self.main_widget.target_text.toPlainText())
+			if self.main_widget.fuzzy_checkbox.isChecked():
+				self.main_widget.main_editor.item(previous_row, 0).setBackground(QtGui.QColor(255, 255, 0))
+			else:
+				self.main_widget.main_editor.item(previous_row, 0).setBackground(QtGui.QColor(0, 255, 0))
+				
+			options = {}
+			options['project_path'] = self.project_path
+			options['segment'] = self.main_widget.target_text.toPlainText()
+			options['target_language'] = self.target_language
+			options['source_segment_id'] = self.main_widget.main_editor.item(previous_row, 0).text()
+			options['source_file'] = self.filename
+			options['fuzzy'] = self.main_widget.fuzzy_checkbox.isChecked()
+			options['plural_index'] = 0
+			options['action'] = 'save_variant'
+			
+			self.db_background_worker.start.emit(options)
+			
+			if self.working_with_plurals:
+				plural_options = {}
+				for i in range(self.main_widget.current_segment_target_tab_widget.count()):
+					if i > 0:
+						plural_options[i] = dict(options)
+						plural_options[i]['segment'] = self.main_widget.current_segment_target_tab_widget.widget(i).toPlainText()
+						plural_options[i]['plural_index'] = i
+						
+						self.db_background_worker.start.emit(plural_options[i])
+						
+						self.plurals[self.main_widget.main_editor.item(previous_row, 1).text(),i][0] = plural_options[i]['segment']
+						
+		#Check if the row we moved to is valid
+		if current_row >= 0:
+			#Check if we're gonna work with plurals
+			current_source_text = self.main_widget.main_editor.item(current_row, 1).text()
+			if (current_source_text,1) in self.plurals:
+				self.working_with_plurals = True
+				plurals_count = 0
+				for sentence, plural_index in self.plurals.keys():
+					if sentence == current_source_text:
+						plurals_count += 1
+				self.show_plural_controls(plurals_count)
+			else:
+				self.working_with_plurals = False
+				self.hide_plural_controls()
 			
 			#Let's work on the current string
 			if current_row != previous_row:
-				self.main_widget.source_text.setText(self.main_widget.main_editor.item(current_row, 1).text())
-				self.main_widget.target_text.setText(self.main_widget.main_editor.item(current_row, 2).text())
+				if not self.working_with_plurals:
+					self.main_widget.source_text.setText(current_source_text)
+					self.main_widget.target_text.setText(self.main_widget.main_editor.item(current_row, 2).text())
+				else:
+					self.main_widget.source_text.setHtml('<font color="gray">Singular:</font><br>' + current_source_text + '<br><br><font color="gray">Plural:</font><br>' + self.plurals[current_source_text,1][2])
+					self.main_widget.target_text.setText(self.main_widget.main_editor.item(current_row, 2).text())
+					for i in range(plurals_count):
+						self.main_widget.current_segment_target_tab_widget.widget(i+1).setText(self.plurals[current_source_text,i+1][0])
+						self.previous_plurals = {}
+						self.previous_plurals[i+1] = self.main_widget.current_segment_target_tab_widget.widget(i+1).toPlainText()
+				
 				self.previous_translated_text = self.main_widget.main_editor.item(current_row, 2).text()
+
 				current_segment_color = self.main_widget.main_editor.item(current_row, 0).background().color()
 				if(current_segment_color == QtGui.QColor(255, 255, 0)):
 					self.main_widget.fuzzy_checkbox.setChecked(True)
@@ -414,21 +515,27 @@ class main_window(QtWidgets.QMainWindow):
 				else:
 					self.main_widget.fuzzy_checkbox.setChecked(False)
 					self.previous_fuzzy_status = False
-			
-			#Get the plugins to work
-			plugin_options = {}
-			plugin_options['project_file_path'] = self.project_path
-			plugin_options['filename'] = self.filename
-			plugin_options['segment_id'] = self.main_widget.main_editor.item(current_row, 0).text()
-			plugin_options['source_text'] = self.main_widget.source_text.toPlainText()
-			plugin_options['target_text'] = self.main_widget.target_text.toPlainText()
-			plugin_options['source_language'] = self.source_language
-			plugin_options['target_language'] = self.target_language
-			for plugin_widget in self.list_of_loaded_plugin_widgets:
-				plugin_widget.main_action(plugin_options)
 				
-	def save_variant_onFinish(self, source_segment):
-		self.main_status_bar.showMessage("Segment #" + str(source_segment) + " saved.", 3000)
+				#Get the plugins to work
+				plugin_options = {}
+				plugin_options['project_file_path'] = self.project_path
+				plugin_options['filename'] = self.filename
+				plugin_options['segment_id'] = self.main_widget.main_editor.item(current_row, 0).text()
+				plugin_options['source_text'] = current_source_text
+				plugin_options['target_text'] = self.main_widget.target_text.toPlainText()
+				plugin_options['source_language'] = self.source_language
+				plugin_options['target_language'] = self.target_language
+				for plugin_widget in self.list_of_loaded_plugin_widgets:
+					plugin_widget.main_action(plugin_options)
+	
+	def db_thread_on_finish(self, options):
+		if options['action'] == 'save_variant':
+			self.main_status_bar.showMessage("Segment #" + str(options['source_segment_id']) + " saved.", 3000)
+			self.update_status_bar_file()
+			self.update_status_bar_project()
+	
+	def save_variant_onFinish(self, source_segment_id):
+		self.main_status_bar.showMessage("Segment #" + str(source_segment_id) + " saved.", 3000)
 		self.update_status_bar_file()
 		self.update_status_bar_project()
 	
@@ -533,10 +640,11 @@ class main_window(QtWidgets.QMainWindow):
 		self.file_statistics_label.setText("File segments: " + str(file_translated_segments) + "/" + str(file_total_segments))
 	
 	def save_current_file(self):
-		current_row = self.main_widget.main_editor.currentRow()
-		if current_row >= 0 and self.main_widget.target_text.toPlainText() != '':
-			db_op.save_variant(self, self.main_widget.target_text.toPlainText(), self.target_language, self.main_widget.main_editor.item(current_row, 0).text(), self.filename)
-			self.main_widget.main_editor.item(current_row, 2).setText(self.main_widget.target_text.toPlainText())
+		#current_row = self.main_widget.main_editor.currentRow()
+		#if current_row >= 0 and self.main_widget.target_text.toPlainText() != '':
+		#	db_op.save_variant(self, self.main_widget.target_text.toPlainText(), self.target_language, self.main_widget.main_editor.item(current_row, 0).text(), self.filename)
+		#	self.main_widget.main_editor.item(current_row, 2).setText(self.main_widget.target_text.toPlainText())
+		self.main_editor_currentCellChanged(self.main_widget.main_editor.currentRow(), 1,self.main_widget.main_editor.currentRow(), 1 )
 			
 	def close_current_project(self):
 		#Save current file
@@ -553,16 +661,7 @@ class main_window(QtWidgets.QMainWindow):
 		else:
 			self.build_menu(None, False)
 		
-		#Reset the global variables
-		self.filename = ''
-		self.project_path = ''
-		self.project_dir = ''
-		self.valid_files = ''
-		self.source_language = ''
-		self.target_language = ''
-		self.previous_translated_text = ''
-		self.project_total_segments = 0
-		self.project_transtaled_segments = 0
+		self.reset_globals()
 		
 		self.main_widget.main_editor_groupbox.setTitle("[No file]")
 		self.setWindowTitle('BlackCAT')
@@ -603,6 +702,7 @@ class main_window(QtWidgets.QMainWindow):
 			print("Unsupported file with extension " + file_extension)
 		
 	def open_file_for_translation(self, filename):
+		self.main_widget.main_h_splitter.setEnabled(False)
 		if filename != self.filename:
 			self.status_label.setText("Openning file: " + filename)
 			
@@ -621,30 +721,41 @@ class main_window(QtWidgets.QMainWindow):
 		
 	def open_file_onFinish(self, filename, result):
 		self.main_widget.main_editor.setRowCount(len(result))
+		self.max_plurals_in_file = 0
+		plurals_offset = 0
+		# row [0]=id, [1]=source text, [2]=target text, [3]=fuzzy flag, [4]=plural index, [5]=plural form
 		for index, row in enumerate(result):
-			row_id = QtWidgets.QTableWidgetItem(str(row[0]))
-			row_source = QtWidgets.QTableWidgetItem(row[1])
-			row_target = QtWidgets.QTableWidgetItem(row[2])
-			if(row[2]=="" or row[2] is None):
-				row_id.setBackground(QtGui.QColor(255, 0, 0))
-			else:
-				if(row[3]==1):
-					row_id.setBackground(QtGui.QColor(255, 255, 0))
+			if row[4]==0 or row[4] is None:
+				row_id = QtWidgets.QTableWidgetItem(str(row[0]))
+				row_source = QtWidgets.QTableWidgetItem(row[1])
+				row_target = QtWidgets.QTableWidgetItem(row[2])
+				if(row[2]=="" or row[2] is None):
+					row_id.setBackground(QtGui.QColor(255, 0, 0))
 				else:
-					row_id.setBackground(QtGui.QColor(0, 255, 0))
-			row_source.setTextAlignment(QtCore.Qt.AlignTop)
-			row_target.setTextAlignment(QtCore.Qt.AlignTop)
-			self.main_widget.main_editor.setItem(index, 0, row_id)
-			self.main_widget.main_editor.setItem(index, 1, row_source)
-			self.main_widget.main_editor.setItem(index, 2, row_target)
-			self.status_label.setText("Openning file: " + filename + " (loading segment " + str(index + 1) + " of " + str(len(result)) + ")" )
-			QtWidgets.QApplication.processEvents()
+					if(row[3]==1):
+						row_id.setBackground(QtGui.QColor(255, 255, 0))
+					else:
+						row_id.setBackground(QtGui.QColor(0, 255, 0))
+				row_source.setTextAlignment(QtCore.Qt.AlignTop)
+				row_target.setTextAlignment(QtCore.Qt.AlignTop)
+				self.main_widget.main_editor.setItem(index - plurals_offset, 0, row_id)
+				self.main_widget.main_editor.setItem(index - plurals_offset, 1, row_source)
+				self.main_widget.main_editor.setItem(index - plurals_offset, 2, row_target)
+				self.status_label.setText("Openning file: " + filename + " (loading segment " + str(index + 1) + " of " + str(len(result)) + ")" )
+				QtWidgets.QApplication.processEvents()
+			else:
+				if row[4] > self.max_plurals_in_file:
+					self.max_plurals_in_file = row[4]
+				self.plurals[row[1], row[4]] = [row[2], row[3], row[5]]
+				plurals_offset = plurals_offset + 1
+		
+		self.main_widget.main_editor.setRowCount(len(result) - plurals_offset)
 	
 		self.filename = filename
 		self.previous_translated_text = ''
 		self.main_widget.main_editor_groupbox.setTitle(filename)
 		
-		#self.main_widget.main_h_splitter.setEnabled(True)
+		self.main_widget.main_h_splitter.setEnabled(True)
 		self.status_label.setText("Ready.")
 		self.main_widget.target_text.setFocus()
 		
@@ -662,9 +773,6 @@ class main_window(QtWidgets.QMainWindow):
 		if source_file_dir:
 			generate_thread = generate_translated_files_thread(options, self.generate_translated_file_on_progress, self.generate_translated_files_on_finish, self)
 			self.status_msgbox = dialogs.status_dialog("Generate translated files", "Generating files...")
-			#self.main_widget.setEnabled(False)
-			#self.menu_bar.setEnabled(False)
-			#self.status_msgbox.show()
 			generate_thread.start()
 			self.status_msgbox.exec_()
 			
@@ -679,8 +787,6 @@ class main_window(QtWidgets.QMainWindow):
 	
 	def generate_translated_files_on_finish(self):
 		self.status_msgbox.tasks_completed()
-		#self.main_widget.setEnabled(True)
-		#self.menu_bar.setEnabled(True)
 		
 	def import_tm(self):
 		tm_file_name_list = QtWidgets.QFileDialog.getOpenFileNames(self, 'Import translation memory files', '', 'Any Supported File (*.tmx, *.po);;Translation Memory eXchange (*.tmx);;PO files (*.po)')[0]

@@ -52,7 +52,7 @@ def import_file(options):
 def generate_file(options):
 	filename = os.path.basename(options['file_path'])
 	
-	segments_in_db = db_op.get_segments_in_db(options['project_path'], options['source_language'], options['target_language'], filename)
+	#segments_in_db = db_op.get_segments_in_db(options['project_path'], options['source_language'], options['target_language'], filename)
 		
 	encoding = db_op.get_encoding(options['project_path'], filename)
 
@@ -76,12 +76,20 @@ def generate_file(options):
 	segments = tokenizer.tokenize(text)
 	positions = tokenizer.span_tokenize(text)
 	last_segment_ending_position = 0
+
 	for segment, position in zip(segments, positions):
 		translated_data = translated_data + text[last_segment_ending_position:position[0]]
-		if segments_in_db[segment][0] is None:
+		#if segments_in_db[segment][0] is None:
+		#	translated_data = translated_data + segment
+		#else:
+		#	translated_data = translated_data + segments_in_db[segment][0]
+		
+		translated_segment = db_op.get_translated_segment(options['project_path'], options['source_language'], options['target_language'], filename, segment)
+		if translated_segment is None:
 			translated_data = translated_data + segment
 		else:
-			translated_data = translated_data + segments_in_db[segment][0]
+			translated_data = translated_data + translated_segment[1]
+		
 		last_segment_ending_position = position[1]
 	file.close()
 	

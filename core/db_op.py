@@ -16,6 +16,7 @@ def create_project_db(self, project_file_path, source_language, target_language)
 									segment_id INTEGER PRIMARY KEY,
 									segment TEXT NOT NULL,
 									language TEXT NOT NULL,
+									plural TEXT,
 									source_file TEXT,
 									source_file_index BIGINT,
 									FOREIGN KEY(source_file) REFERENCES source_files(name),
@@ -26,6 +27,7 @@ def create_project_db(self, project_file_path, source_language, target_language)
 									segment TEXT NOT NULL,
 									language TEXT NOT NULL,
 									fuzzy INTEGER DEFAULT 0,
+									plural_index INTEGER DEFAULT 0,
 									creation_id TEXT,
 									creation_date TEXT,
 									modification_id TEXT,
@@ -35,8 +37,8 @@ def create_project_db(self, project_file_path, source_language, target_language)
 									external_source TEXT,
 									FOREIGN KEY(source_segment) REFERENCES source_segments(segment_id),
 									FOREIGN KEY(source_file) REFERENCES source_files(name),
-									UNIQUE(language, source_segment, source_file) ON CONFLICT FAIL);""")
-									
+									UNIQUE(language, source_segment, source_file, plural_index) ON CONFLICT FAIL);""")
+	
 	project_cursor.execute("""	CREATE TABLE project_settings(
 									setting_id INTEGER PRIMARY KEY,
 									key TEXT UNIQUE NOT NULL,
@@ -48,6 +50,7 @@ def create_project_db(self, project_file_path, source_language, target_language)
 	project_db.commit()
 	project_db.close()
 
+#Obsolete
 def save_variant(self, segment, language, source_segment, source_file):
 	project_db = sqlite3.connect(self.project_path)
 	project_cursor = project_db.cursor()
@@ -56,7 +59,7 @@ def save_variant(self, segment, language, source_segment, source_file):
 	project_db.close()
 	self.main_status_bar.showMessage("Segment #" + str(source_segment) + " saved.", 3000)
 
-#Returns a dictionary where the key is a segment and the value is a list containing the translation and the fuzzy flag
+#Returns a dictionary where the key is a segment, and the value is a list containing the translation and the fuzzy flag
 def get_segments_in_db(project_path, source_language, target_language, filename):
 	project_db = sqlite3.connect(project_path)
 	project_cursor = project_db.cursor()
@@ -65,8 +68,37 @@ def get_segments_in_db(project_path, source_language, target_language, filename)
 											FROM source_segments
 											LEFT OUTER JOIN variants ON (variants.source_segment = source_segments.segment_id AND variants.language = ? AND variants.source_file = ?)
 											WHERE source_segments.language = ?
-											AND source_segments.source_file = ?;""", (target_language, filename, source_language, filename)):
+											AND source_segments.source_file = ?
+											AND variants.plural_index = 0;""", (target_language, filename, source_language, filename)):
 		segments_in_db[row[0]] = [row[1], row[2]]
+	project_db.close()
+	return segments_in_db
+	
+def get_translated_segment(project_path, source_language, target_language, filename, source_segment):
+	project_db = sqlite3.connect(project_path)
+	project_cursor = project_db.cursor()
+	segments_in_db = {}
+	row = project_cursor.execute("""	SELECT source_segments.segment, variants.segment, variants.fuzzy
+											FROM source_segments
+											LEFT OUTER JOIN variants ON (variants.source_segment = source_segments.segment_id AND variants.language = ? AND variants.source_file = ?)
+											WHERE source_segments.language = ?
+											AND source_segments.source_file = ?
+											AND source_segments.segment = ?
+											AND variants.plural_index = 0;""", (target_language, filename, source_language, filename, source_segment)).fetchone()
+	project_db.close()
+	return row
+	
+#Returns a dictionary where the key is a segment and its translation's plural_index, and the value is a list containing the translation and the fuzzy flag
+def get_segments_with_plurals_in_db(project_path, source_language, target_language, filename):
+	project_db = sqlite3.connect(project_path)
+	project_cursor = project_db.cursor()
+	segments_in_db = {}
+	for row in project_cursor.execute("""	SELECT source_segments.segment, variants.plural_index, variants.segment, variants.fuzzy
+											FROM source_segments
+											LEFT OUTER JOIN variants ON (variants.source_segment = source_segments.segment_id AND variants.language = ? AND variants.source_file = ?)
+											WHERE source_segments.language = ?
+											AND source_segments.source_file = ?;""", (target_language, filename, source_language, filename)):
+		segments_in_db[row[0], row[1]] = [row[2], row[3]]
 	project_db.close()
 	return segments_in_db
 	
@@ -149,18 +181,20 @@ def get_imported_files_mtime(project_path):
 	project_db.close()
 	return files_already_imported
 	
-def import_source_segment(project_path, segment, source_language, filename, index):
+def import_source_segment(project_path, segment, source_language, filename, index, plural=""):
 	project_db = sqlite3.connect(project_path)
 	project_cursor = project_db.cursor()
-	project_cursor.execute("INSERT INTO source_segments (segment, language, source_file) VALUES(?, ?, ?);", (segment, source_language, filename))
+	project_cursor.execute("INSERT INTO source_segments (segment, language, plural, source_file) VALUES(?, ?, ?, ?);", (segment, source_language, plural, filename))
 	project_cursor.execute("UPDATE source_segments SET source_file_index = ? WHERE segment = ? AND language = ? AND source_file = ?;", (index, segment, source_language, filename))
+	if plural != "":
+		project_cursor.execute("UPDATE source_segments SET plural = ? WHERE segment = ? AND language = ? AND source_file = ?;", (plural, segment, source_language, filename))
 	project_db.commit()
 	project_db.close()
 
-def import_variant(project_path, variant, target_language, fuzzy, filename, segment):
+def import_variant(project_path, variant, target_language, fuzzy, filename, segment, plural_index=0):
 	project_db = sqlite3.connect(project_path)
 	project_cursor = project_db.cursor()
-	project_cursor.execute("INSERT OR IGNORE INTO variants (segment, language, fuzzy, source_segment, source_file) SELECT ?, ?, ?, source_segments.segment_id, ? FROM source_segments WHERE segment = ?;", (variant, target_language, fuzzy, filename, segment))
+	project_cursor.execute("INSERT OR IGNORE INTO variants (segment, language, fuzzy, source_segment, source_file, plural_index) SELECT ?, ?, ?, source_segments.segment_id, ?, ? FROM source_segments WHERE segment = ?;", (variant, target_language, fuzzy, filename, plural_index, segment))
 	project_db.commit()
 	project_db.close()
 	
@@ -183,6 +217,7 @@ def get_translation_memory(project_path, segment_id, source_language, target_lan
 				JOIN source_segments ON variants.source_segment = source_segments.segment_id
 				WHERE source_segments.segment_id IN ({})
 				AND variants.language = ?
+				AND variants.plural_index = 0
 				AND NOT (variants.source_file == ? AND variants.source_segment == ?);""".format(placeholders)
 	list_of_arguments.append(target_language)
 	list_of_arguments.append(filename)
@@ -242,11 +277,13 @@ class db_save_variant_thread(QtCore.QThread):
 		
 		self.options = options
 		self.finished.connect(finished_callback)
+		#print("init -> ", self.options)
 		
 	def run(self):
+		print("run -> ", self.options)
 		project_db = sqlite3.connect(self.options['project_path'])
 		project_cursor = project_db.cursor()
-		project_cursor.execute("INSERT OR REPLACE INTO variants (segment, language, source_segment, source_file, fuzzy) VALUES(?, ?, ?, ?, ?);", (self.options['segment'], self.options['target_language'], self.options['source_segment'], self.options['source_file'], self.options['fuzzy']))
+		project_cursor.execute("INSERT OR REPLACE INTO variants (segment, language, source_segment, source_file, fuzzy, plural_index) VALUES(?, ?, ?, ?, ?, ?);", (self.options['segment'], self.options['target_language'], self.options['source_segment'], self.options['source_file'], self.options['fuzzy'], self.options['plural_index']))
 		project_db.commit()
 		project_db.close()
 		self.finished.emit(self.options['source_segment'])
@@ -264,13 +301,13 @@ class db_open_file_thread(QtCore.QThread):
 		project_db = sqlite3.connect(self.options['project_path'])
 		project_cursor = project_db.cursor()
 		result = []
-		for row in project_cursor.execute("""	SELECT source_segments.segment_id, source_segments.segment, variants.segment, variants.fuzzy
+		for row in project_cursor.execute("""	SELECT source_segments.segment_id, source_segments.segment, variants.segment, variants.fuzzy, variants.plural_index, source_segments.plural
 												FROM source_segments
 												LEFT OUTER JOIN variants ON ((variants.source_segment = source_segments.segment_id) 
-													AND (variants.language = ?))
+													AND (variants.language = ?) AND (variants.source_file = ?))
 												WHERE source_segments.source_file = ?
 												AND source_segments.language = ?
-												ORDER BY source_segments.source_file_index""", (self.options['target_language'], self.options['filename'], self.options['source_language'])):
+												ORDER BY source_segments.source_file_index""", (self.options['target_language'], self.options['filename'], self.options['filename'], self.options['source_language'])):
 			result.append(row)
 		project_db.close()
 		self.finished.emit(self.options['filename'], result)
@@ -376,3 +413,28 @@ class db_import_tm_thread(QtCore.QThread):
 		project_db.close()
 		
 		self.finished.emit(self.imported_files)
+		
+#Is this the right way to work with QThreads?
+class db_worker(QtCore.QObject):
+	start = QtCore.pyqtSignal(object)
+	finished = QtCore.pyqtSignal(object)
+	
+	def __init__(self):
+		super(db_worker, self).__init__()
+		self.start.connect(self.run, QtCore.Qt.QueuedConnection)
+		#self.start.connect(self.run)
+		#self.start.connect(self.run, QtCore.Qt.BlockingQueuedConnection)
+		self.mutex = QtCore.QMutex()
+	
+	@QtCore.pyqtSlot(object)
+	def run(self, options):
+		self.mutex.lock()
+		print("db_worker.run() -> ", options)
+		if options['action'] == 'save_variant':
+			project_db = sqlite3.connect(options['project_path'])
+			project_cursor = project_db.cursor()
+			project_cursor.execute("INSERT OR REPLACE INTO variants (segment, language, source_segment, source_file, fuzzy, plural_index) VALUES(?, ?, ?, ?, ?, ?);", (options['segment'], options['target_language'], options['source_segment_id'], options['source_file'], options['fuzzy'], options['plural_index']))
+			project_db.commit()
+			project_db.close()
+			self.finished.emit(options)
+		self.mutex.unlock()
