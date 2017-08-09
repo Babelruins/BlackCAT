@@ -133,7 +133,7 @@ class import_files_thread(QtCore.QThread):
 				text_processors.gettext.import_file(text_processor_options)
 				self.progress.emit("Success!")
 		except Exception as e:
-			self.progress.emit("ERROR: " + str(e))
+			self.progress.emit('<font color="red">' + type(e).__name__ + ': ' + str(e) + '</font>')
 
 class main_window(QtWidgets.QMainWindow):
 	def __init__(self):

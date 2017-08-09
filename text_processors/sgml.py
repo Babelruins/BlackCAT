@@ -42,7 +42,7 @@ def import_file(options):
 def generate_file(options):
 	filename = os.path.basename(options['file_path'])
 	
-	segments_in_db = db_op.get_segments_in_db(options['project_path'], options['source_language'], options['target_language'], filename)
+	#segments_in_db = db_op.get_segments_in_db(options['project_path'], options['source_language'], options['target_language'], filename)
 
 	sgml_file = open(options['file_path'])
 	soup = BeautifulSoup(sgml_file.read(), "html.parser")
@@ -57,9 +57,11 @@ def generate_file(options):
 			for element in seg:
 				text_in_par = text_in_par + str(element)
 			if text_in_par:
-				if segments_in_db[text_in_par][0] is not None:
+				translated_segment = db_op.get_translated_segment(options['project_path'], options['source_language'], options['target_language'], filename, text_in_par)
+				#if segments_in_db[text_in_par][0] is not None:
+				if translated_segment is not None:
 					seg.string = ''
-					sentence_soup = BeautifulSoup(segments_in_db[text_in_par][0], 'lxml')
+					sentence_soup = BeautifulSoup(translated_segment[1], 'lxml')
 					for sentence_element in sentence_soup.p:
 						seg.append(sentence_element)
 	

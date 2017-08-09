@@ -36,27 +36,28 @@ def import_file(options):
 	
 def generate_file(options):
 	filename = os.path.basename(options['file_path'])
-	segments_in_db = db_op.get_segments_with_plurals_in_db(options['project_path'], options['source_language'], options['target_language'], filename)
+	#segments_in_db = db_op.get_segments_with_plurals_in_db(options['project_path'], options['source_language'], options['target_language'], filename)
 	po_file = polib.pofile(options['file_path'])
 	for entry in po_file:
 		if entry.msgid_plural != '':
 			is_fuzzy = False
 			for index, plural in entry.msgstr_plural.items():
-				plural = segments_in_db[entry.msgid, index][0]
-				if segments_in_db[entry.msgid, index][1] == 1:
+				translated_segment = db_op.get_translated_segment(options['project_path'], options['source_language'], options['target_language'], filename, entry.msgid, index)
+				entry.msgstr_plural[index] = translated_segment[1]
+				if translated_segment[2] == 1:
 					is_fuzzy = True
 			if is_fuzzy and ('fuzzy' not in entry.flags):
 				entry.flags.append('fuzzy')
 			elif not is_fuzzy and ('fuzzy' in entry.flags):
 				entry.flags.remove('fuzzy')
 		else:
-			if segments_in_db[entry.msgid, 0][0] is not None:
-				entry.msgstr = segments_in_db[entry.msgid, 0][0]
-				
-			if (segments_in_db[entry.msgid, 0][1] == 0) and ('fuzzy' in entry.flags):
-				entry.flags.remove('fuzzy')
-			elif (segments_in_db[entry.msgid, 0][1] == 1) and ('fuzzy' not in entry.flags):
-				entry.flags.append('fuzzy')
+			translated_segment = db_op.get_translated_segment(options['project_path'], options['source_language'], options['target_language'], filename, entry.msgid, 0)
+			if translated_segment is not None:
+				entry.msgstr = translated_segment[1]
+				if (translated_segment[2] == 0) and ('fuzzy' in entry.flags):
+					entry.flags.remove('fuzzy')
+				elif (translated_segment[2] == 1) and ('fuzzy' not in entry.flags):
+					entry.flags.append('fuzzy')
 	
 	po_file.metadata['X-Generator'] = 'BlackCAT 1.0'
 	po_file.save(os.path.join(options['project_dir'], 'processed_files', filename))

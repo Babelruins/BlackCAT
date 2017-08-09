@@ -74,7 +74,7 @@ def get_segments_in_db(project_path, source_language, target_language, filename)
 	project_db.close()
 	return segments_in_db
 	
-def get_translated_segment(project_path, source_language, target_language, filename, source_segment):
+def get_translated_segment(project_path, source_language, target_language, filename, source_segment, plural_index=0):
 	project_db = sqlite3.connect(project_path)
 	project_cursor = project_db.cursor()
 	segments_in_db = {}
@@ -84,7 +84,7 @@ def get_translated_segment(project_path, source_language, target_language, filen
 											WHERE source_segments.language = ?
 											AND source_segments.source_file = ?
 											AND source_segments.segment = ?
-											AND variants.plural_index = 0;""", (target_language, filename, source_language, filename, source_segment)).fetchone()
+											AND variants.plural_index = ?;""", (target_language, filename, source_language, filename, source_segment, plural_index)).fetchone()
 	project_db.close()
 	return row
 	
