@@ -87,11 +87,8 @@ class import_files_thread(QtCore.QThread):
 				valid_files.append(file)
 				new_m_time = os.path.getmtime(file_path)
 				if file not in self.options['files_already_imported']:
-					if os.path.splitext(file_path)[1] in [".txt", ".odt", ".sgml", ".po"]:
-						self.progress.emit("'" + file + "' has not been imported yet, processing ...")
-						self.import_file_into_project(file_path, new_m_time)
-					else:
-						self.progress.emit("Unsupported file extension '" + os.path.splitext(file_path)[1] + "'.")
+					self.progress.emit("'" + file + "' has not been imported yet, processing ...")
+					self.import_file_into_project(file_path, new_m_time)
 				else:
 					#Do the same for the files that have changed
 					if self.options['files_already_imported'][file] != new_m_time:
@@ -105,7 +102,7 @@ class import_files_thread(QtCore.QThread):
 		#If a file has been deleted from the source_file dir but still in the database:
 		for file in self.options['files_already_imported']:
 			if file not in valid_files:
-				save_file_as_tm(self.project_path, file)
+				db_op.save_file_as_tm(self.options['project_path'], file)
 				
 		self.finished.emit(valid_files)
 	
@@ -122,16 +119,18 @@ class import_files_thread(QtCore.QThread):
 		try:
 			if file_extension == ".txt":
 				text_processors.punkt.import_file(text_processor_options)
-				self.progress.emit("Success!")
+				self.progress.emit('<font color="green">Success!</font>')
 			elif file_extension == ".odt":
 				text_processors.odt.import_file(text_processor_options)
-				self.progress.emit("Success!")
+				self.progress.emit('<font color="green">Success!</font>')
 			elif file_extension == ".sgml":
 				text_processors.sgml.import_file(text_processor_options)
-				self.progress.emit("Success!")
+				self.progress.emit('<font color="green">Success!</font>')
 			elif file_extension == ".po":
 				text_processors.gettext.import_file(text_processor_options)
-				self.progress.emit("Success!")
+				self.progress.emit('<font color="green">Success!</font>')
+			else:
+				self.progress.emit("<font color=\"orange\">WARNING: Unsupported file extension '" + file_extension + "'.</font>")
 		except Exception as e:
 			self.progress.emit('<font color="red">' + type(e).__name__ + ': ' + str(e) + '</font>')
 
