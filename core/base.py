@@ -1,5 +1,5 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
-import configparser, nltk.data, os, functools, webbrowser, re
+import configparser, nltk.data, os, functools, webbrowser, re, enchant
 from core import dialogs, db_op
 import text_processors, plugins
 from bs4 import BeautifulSoup
@@ -15,7 +15,22 @@ class tags_highlighter(QtGui.QSyntaxHighlighter):
 		self.highlightingRules = []
 		self.highlightingRules.append((tag_regex, tag_format))
 		
+		self.dict = None
+		self.spell_check_format = QtGui.QTextCharFormat()
+		self.spell_check_format.setUnderlineColor(QtCore.Qt.red)
+		self.spell_check_format.setUnderlineStyle(QtGui.QTextCharFormat.SpellCheckUnderline)
+		
+	def set_dictionary(self, dict):
+		self.dict = dict
+		
 	def highlightBlock(self, text):
+		#Spell checking
+		if self.dict is not None:
+			for word in re.finditer('(?iu)[\w\']+', text):
+				if not self.dict.check(word.group()):
+					self.setFormat(word.start(), word.end() - word.start(), self.spell_check_format)
+					
+		#Tags
 		for pattern, format in self.highlightingRules:
 			expression = QtCore.QRegExp(pattern)
 			index = expression.indexIn(text)
@@ -173,14 +188,15 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget.source_text.setReadOnly(True)
 		self.main_widget.source_text.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 		self.main_widget.source_text.customContextMenuRequested.connect(self.build_source_context_menu)
-		source_text_highlighter = tags_highlighter(self.main_widget.source_text.document())
+		source_text_highlighter = tags_highlighter(self.main_widget.source_text)
 		
 		self.main_widget.target_text = QtWidgets.QTextEdit(self)
 		self.main_widget.target_text.setFont(QtGui.QFont("Lucida Console"))
 		self.main_widget.target_text.setAcceptRichText(False)
 		self.main_widget.target_text.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 		self.main_widget.target_text.customContextMenuRequested.connect(self.build_target_context_menu)
-		target_text_highlighter = tags_highlighter(self.main_widget.target_text.document())
+		target_text_highlighter = tags_highlighter(self.main_widget.target_text)
+		target_text_highlighter.set_dictionary(enchant.Dict())
 
 		self.main_widget.current_segment_groupbox = QtWidgets.QGroupBox()
 		self.main_widget.current_segment_layout = QtWidgets.QVBoxLayout(self.main_widget.current_segment_groupbox)
@@ -437,8 +453,7 @@ class main_window(QtWidgets.QMainWindow):
 					if self.previous_plurals[i] != self.main_widget.current_segment_target_tab_widget.widget(i).toPlainText():
 						save_variant = True
 			
-			previous_segment_color = self.main_widget.main_editor.item(previous_row, 0).background().color()
-			if(previous_segment_color == QtGui.QColor(255, 255, 0)):
+			if(self.main_widget.fuzzy_checkbox.isChecked()):
 				previous_segment_new_fuzzy_status = True
 			else:
 				previous_segment_new_fuzzy_status = False

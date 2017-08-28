@@ -429,7 +429,7 @@ class db_worker(QtCore.QObject):
 	@QtCore.pyqtSlot(object)
 	def run(self, options):
 		self.mutex.lock()
-		print("db_worker.run() -> ", options)
+		#print("db_worker.run() -> ", options)
 		if options['action'] == 'save_variant':
 			project_db = sqlite3.connect(options['project_path'])
 			project_cursor = project_db.cursor()
