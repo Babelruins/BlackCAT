@@ -12,8 +12,14 @@ class tags_highlighter(QtGui.QSyntaxHighlighter):
 		tag_format.setForeground(QtCore.Qt.gray)
 		tag_regex = QtCore.QRegExp("<[^\n]*>")
 		tag_regex.setMinimal(True)
+		
+		newline_format = QtGui.QTextCharFormat()
+		newline_format.setBackground(QtCore.Qt.gray)
+		newline_regex = QtCore.QRegExp("\n")
+		
 		self.highlightingRules = []
 		self.highlightingRules.append((tag_regex, tag_format))
+		self.highlightingRules.append((newline_regex, newline_format))
 		
 		self.dict = None
 		self.spell_check_format = QtGui.QTextCharFormat()
@@ -39,6 +45,9 @@ class tags_highlighter(QtGui.QSyntaxHighlighter):
 				length = expression.matchedLength()
 				self.setFormat(index, length, format)
 				index = expression.indexIn(text, index + length)
+				
+		#Newlines
+		
 				
 class generate_translated_files_thread(QtCore.QThread):
 	progress = QtCore.pyqtSignal(object)
@@ -158,34 +167,33 @@ class main_window(QtWidgets.QMainWindow):
 		
 		self.main_widget = QtWidgets.QWidget(self)
 		
-		#Main layout
-		self.main_widget.main_v_layout = QtWidgets.QVBoxLayout(self.main_widget)
-		self.main_widget.main_h_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
+		#Main table
+		self.main_widget.main_table_groupbox = QtWidgets.QGroupBox("[No file]")
+		self.main_widget.main_table_layout = QtWidgets.QVBoxLayout(self.main_widget.main_table_groupbox)
 		
-		#Editor side
-		self.main_widget.editor_v_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, self)
-		self.main_widget.main_editor_groupbox = QtWidgets.QGroupBox("[No file]")
-		self.main_widget.main_editor_layout = QtWidgets.QVBoxLayout(self.main_widget.main_editor_groupbox)
-		
-		self.main_widget.main_editor = QtWidgets.QTableWidget(self)
-		self.main_widget.main_editor.setColumnCount(3)
-		self.main_widget.main_editor.setHorizontalHeaderLabels(["ID", "Source text", "Target text"])
-		#self.main_widget.main_editor.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
-		table_header = self.main_widget.main_editor.horizontalHeader()
+		self.main_widget.main_table = QtWidgets.QTableWidget(self)
+		self.main_widget.main_table.setColumnCount(3)
+		self.main_widget.main_table.setHorizontalHeaderLabels(["ID", "Source text", "Target text"])
+		#self.main_widget.main_table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+		table_header = self.main_widget.main_table.horizontalHeader()
 		table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
 		table_header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
 		table_header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
-		self.main_widget.main_editor.verticalHeader().hide()
-		self.main_widget.main_editor.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-		self.main_widget.main_editor.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-		self.main_widget.main_editor.setFont(QtGui.QFont("Lucida Console"))
-		self.main_widget.main_editor.setAlternatingRowColors(True)
-		self.main_widget.main_editor.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-		self.main_widget.main_editor.currentCellChanged.connect(self.main_editor_currentCellChanged)
+		self.main_widget.main_table.verticalHeader().hide()
+		self.main_widget.main_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+		self.main_widget.main_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+		self.main_widget.main_table.setFont(QtGui.QFont("Lucida Console"))
+		self.main_widget.main_table.setAlternatingRowColors(True)
+		self.main_widget.main_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+		self.main_widget.main_table.currentCellChanged.connect(self.main_table_currentCellChanged)
 		
+		self.main_widget.main_table_layout.addWidget(self.main_widget.main_table)
+		
+		#Current segment controls
 		self.main_widget.source_text = QtWidgets.QTextEdit(self)
 		self.main_widget.source_text.setFont(QtGui.QFont("Lucida Console"))
 		self.main_widget.source_text.setReadOnly(True)
+		self.main_widget.source_text.setTextInteractionFlags(self.main_widget.source_text.textInteractionFlags() | QtCore.Qt.TextSelectableByKeyboard)
 		self.main_widget.source_text.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 		self.main_widget.source_text.customContextMenuRequested.connect(self.build_source_context_menu)
 		source_text_highlighter = tags_highlighter(self.main_widget.source_text)
@@ -198,6 +206,7 @@ class main_window(QtWidgets.QMainWindow):
 		target_text_highlighter = tags_highlighter(self.main_widget.target_text)
 		target_text_highlighter.set_dictionary(enchant.Dict())
 
+		#Current segment groupbox
 		self.main_widget.current_segment_groupbox = QtWidgets.QGroupBox()
 		self.main_widget.current_segment_layout = QtWidgets.QVBoxLayout(self.main_widget.current_segment_groupbox)
 		self.main_widget.fuzzy_checkbox = QtWidgets.QCheckBox("Fuzzy translation.")
@@ -211,26 +220,23 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget.current_segment_layout.addWidget(self.main_widget.current_segment_target_tab_widget)
 		self.main_widget.current_segment_target_tab_widget.addTab(self.main_widget.target_text, "Translated text")
 		
-		self.main_widget.main_editor_layout.addWidget(self.main_widget.main_editor)
-		self.main_widget.editor_v_splitter.addWidget(self.main_widget.main_editor_groupbox)
-		self.main_widget.editor_v_splitter.addWidget(self.main_widget.current_segment_groupbox)
-		
-		#Plugins side
-		self.main_widget.plugins_v_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, self)
-		
-		#Putting the main layout together
-		self.main_widget.main_h_splitter.addWidget(self.main_widget.editor_v_splitter)
-		self.main_widget.main_h_splitter.addWidget(self.main_widget.plugins_v_splitter)
-		self.main_widget.main_v_layout.addWidget(self.main_widget.main_h_splitter)
-		
-		self.setCentralWidget(self.main_widget)
+		#Placing everything in their right positions
+		self.setCentralWidget(self.main_widget.main_table_groupbox)
+		self.current_segment_dock = QtWidgets.QDockWidget("Current segment")
+		self.current_segment_dock.setObjectName("Current segment")
+		self.current_segment_dock.setWidget(self.main_widget.current_segment_groupbox)
+		self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.current_segment_dock)
+		self.setCorner(QtCore.Qt.BottomRightCorner, QtCore.Qt.RightDockWidgetArea)
 		
 		#load the plugins
 		self.list_of_loaded_plugin_widgets = []
 		for plugin_widget in plugins.list_of_widgets:
 			new_widget = plugin_widget()
 			self.list_of_loaded_plugin_widgets.append(new_widget)
-			self.main_widget.plugins_v_splitter.addWidget(new_widget)
+			plugin_dock = QtWidgets.QDockWidget(new_widget.name)
+			plugin_dock.setObjectName(new_widget.name)
+			plugin_dock.setWidget(new_widget)
+			self.addDockWidget(QtCore.Qt.RightDockWidgetArea, plugin_dock)
 		
 		#Load the settings
 		self.recent_files = []
@@ -243,14 +249,13 @@ class main_window(QtWidgets.QMainWindow):
 			self.move(settings.value('x_position', type=int), settings.value('y_position', type=int))
 			if settings.value('maximized', type=bool):
 				self.setWindowState(QtCore.Qt.WindowMaximized)
-			self.main_widget.editor_v_splitter.restoreState(settings.value('editor_splitter_settings'))
-			self.main_widget.main_h_splitter.restoreState(settings.value('main_splitter_settings'))
-			if settings.value('number_of_loaded_plugins') == len(self.list_of_loaded_plugin_widgets):
-				self.main_widget.plugins_v_splitter.restoreState(settings.value('plugins_splitter_settings'))
+			#if settings.value('number_of_loaded_plugins') == len(self.list_of_loaded_plugin_widgets):
+			#	self.main_widget.plugins_v_splitter.restoreState(settings.value('plugins_splitter_settings'))
+			self.restoreState(settings.value('main_window_settings'))
 		except Exception as e:
 			#Load the defaults
 			self.resize(800,600)
-			self.main_widget.editor_v_splitter.setSizes([400, 200])
+			#self.main_widget.main_table_v_splitter.setSizes([400, 200])
 			print(e)
 		
 		self.menu_bar = self.menuBar()
@@ -295,6 +300,7 @@ class main_window(QtWidgets.QMainWindow):
 		self.working_with_plurals = False
 		self.plurals = {}
 		self.max_plurals_in_file = 0
+		self.previous_source = {}
 	
 	def show_plural_controls(self, n):
 		plurals = []
@@ -421,13 +427,13 @@ class main_window(QtWidgets.QMainWindow):
 			self.menu_project.setEnabled(False)
 	
 	def go_to_next_segment(self):
-		max_row = self.main_widget.main_editor.rowCount() - 1
+		max_row = self.main_widget.main_table.rowCount() - 1
 		if max_row >= 0:
-			current_row = self.main_widget.main_editor.currentRow()
+			current_row = self.main_widget.main_table.currentRow()
 			if current_row >= 0 and current_row < max_row:
-				self.main_widget.main_editor.setCurrentCell(current_row + 1, 0)
+				self.main_widget.main_table.setCurrentCell(current_row + 1, 0)
 			else:
-				self.main_widget.main_editor.setCurrentCell(0, 0)
+				self.main_widget.main_table.setCurrentCell(0, 0)
 				
 	def insert_next_tag(self):
 		source_text = self.main_widget.source_text.toPlainText()
@@ -441,7 +447,7 @@ class main_window(QtWidgets.QMainWindow):
 			elif len(parts) == 2:
 				text = parts[1]
 	
-	def main_editor_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
+	def main_table_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
 		#Check if we need to save the previous variant
 		save_variant = False
 		if previous_row >= 0:
@@ -462,17 +468,17 @@ class main_window(QtWidgets.QMainWindow):
 				save_variant = True
 					
 		if save_variant:
-			self.main_widget.main_editor.item(previous_row, 2).setText(self.main_widget.target_text.toPlainText())
+			self.main_widget.main_table.item(previous_row, 2).setText(self.main_widget.target_text.toPlainText())
 			if self.main_widget.fuzzy_checkbox.isChecked():
-				self.main_widget.main_editor.item(previous_row, 0).setBackground(QtGui.QColor(255, 255, 0))
+				self.main_widget.main_table.item(previous_row, 0).setBackground(QtGui.QColor(255, 255, 0))
 			else:
-				self.main_widget.main_editor.item(previous_row, 0).setBackground(QtGui.QColor(0, 255, 0))
+				self.main_widget.main_table.item(previous_row, 0).setBackground(QtGui.QColor(0, 255, 0))
 				
 			options = {}
 			options['project_path'] = self.project_path
 			options['segment'] = self.main_widget.target_text.toPlainText()
 			options['target_language'] = self.target_language
-			options['source_segment_id'] = self.main_widget.main_editor.item(previous_row, 0).text()
+			options['source_segment_id'] = self.main_widget.main_table.item(previous_row, 0).text()
 			options['source_file'] = self.filename
 			options['fuzzy'] = self.main_widget.fuzzy_checkbox.isChecked()
 			options['plural_index'] = 0
@@ -490,12 +496,12 @@ class main_window(QtWidgets.QMainWindow):
 						
 						self.db_background_worker.start.emit(plural_options[i])
 						
-						self.plurals[self.main_widget.main_editor.item(previous_row, 1).text(),i][0] = plural_options[i]['segment']
+						self.plurals[self.main_widget.main_table.item(previous_row, 1).text(),i][0] = plural_options[i]['segment']
 						
 		#Check if the row we moved to is valid
 		if current_row >= 0:
 			#Check if we're gonna work with plurals
-			current_source_text = self.main_widget.main_editor.item(current_row, 1).text()
+			current_source_text = self.main_widget.main_table.item(current_row, 1).text()
 			if (current_source_text,1) in self.plurals:
 				self.working_with_plurals = True
 				plurals_count = 0
@@ -511,18 +517,18 @@ class main_window(QtWidgets.QMainWindow):
 			if current_row != previous_row:
 				if not self.working_with_plurals:
 					self.main_widget.source_text.setText(current_source_text)
-					self.main_widget.target_text.setText(self.main_widget.main_editor.item(current_row, 2).text())
+					self.main_widget.target_text.setText(self.main_widget.main_table.item(current_row, 2).text())
 				else:
 					self.main_widget.source_text.setHtml('<font color="gray">Singular:</font><br>' + current_source_text + '<br><br><font color="gray">Plural:</font><br>' + self.plurals[current_source_text,1][2])
-					self.main_widget.target_text.setText(self.main_widget.main_editor.item(current_row, 2).text())
+					self.main_widget.target_text.setText(self.main_widget.main_table.item(current_row, 2).text())
 					for i in range(plurals_count):
 						self.main_widget.current_segment_target_tab_widget.widget(i+1).setText(self.plurals[current_source_text,i+1][0])
 						self.previous_plurals = {}
 						self.previous_plurals[i+1] = self.main_widget.current_segment_target_tab_widget.widget(i+1).toPlainText()
 				
-				self.previous_translated_text = self.main_widget.main_editor.item(current_row, 2).text()
+				self.previous_translated_text = self.main_widget.main_table.item(current_row, 2).text()
 
-				current_segment_color = self.main_widget.main_editor.item(current_row, 0).background().color()
+				current_segment_color = self.main_widget.main_table.item(current_row, 0).background().color()
 				if(current_segment_color == QtGui.QColor(255, 255, 0)):
 					self.main_widget.fuzzy_checkbox.setChecked(True)
 					self.previous_fuzzy_status = True
@@ -534,13 +540,19 @@ class main_window(QtWidgets.QMainWindow):
 				plugin_options = {}
 				plugin_options['project_file_path'] = self.project_path
 				plugin_options['filename'] = self.filename
-				plugin_options['segment_id'] = self.main_widget.main_editor.item(current_row, 0).text()
+				plugin_options['segment_id'] = self.main_widget.main_table.item(current_row, 0).text()
 				plugin_options['source_text'] = current_source_text
 				plugin_options['target_text'] = self.main_widget.target_text.toPlainText()
 				plugin_options['source_language'] = self.source_language
 				plugin_options['target_language'] = self.target_language
 				for plugin_widget in self.list_of_loaded_plugin_widgets:
 					plugin_widget.main_action(plugin_options)
+					
+				#Show previous source text in status bar
+				if self.main_widget.main_table.item(current_row, 0).text() in self.previous_source.keys():
+					self.status_label.setText("Old source text: " + repr(self.previous_source[self.main_widget.main_table.item(current_row, 0).text()]))
+				else:
+					self.status_label.setText("Ready.")
 	
 	def db_thread_on_finish(self, options):
 		if options['action'] == 'save_variant':
@@ -654,11 +666,11 @@ class main_window(QtWidgets.QMainWindow):
 		self.file_statistics_label.setText("File segments: " + str(file_translated_segments) + "/" + str(file_total_segments))
 	
 	def save_current_file(self):
-		#current_row = self.main_widget.main_editor.currentRow()
+		#current_row = self.main_widget.main_table.currentRow()
 		#if current_row >= 0 and self.main_widget.target_text.toPlainText() != '':
-		#	db_op.save_variant(self, self.main_widget.target_text.toPlainText(), self.target_language, self.main_widget.main_editor.item(current_row, 0).text(), self.filename)
-		#	self.main_widget.main_editor.item(current_row, 2).setText(self.main_widget.target_text.toPlainText())
-		self.main_editor_currentCellChanged(self.main_widget.main_editor.currentRow(), 1,self.main_widget.main_editor.currentRow(), 1 )
+		#	db_op.save_variant(self, self.main_widget.target_text.toPlainText(), self.target_language, self.main_widget.main_table.item(current_row, 0).text(), self.filename)
+		#	self.main_widget.main_table.item(current_row, 2).setText(self.main_widget.target_text.toPlainText())
+		self.main_table_currentCellChanged(self.main_widget.main_table.currentRow(), 1,self.main_widget.main_table.currentRow(), 1 )
 			
 	def close_current_project(self):
 		#Save current file
@@ -666,7 +678,7 @@ class main_window(QtWidgets.QMainWindow):
 			self.save_current_file()
 	
 		#Clear the controls
-		self.main_widget.main_editor.setRowCount(0)
+		self.main_widget.main_table.setRowCount(0)
 		self.main_widget.source_text.setText('')
 		self.main_widget.target_text.setText('')
 		#self.main_widget.main_h_splitter.setEnabled(False)
@@ -677,7 +689,7 @@ class main_window(QtWidgets.QMainWindow):
 		
 		self.reset_globals()
 		
-		self.main_widget.main_editor_groupbox.setTitle("[No file]")
+		self.main_widget.main_table_groupbox.setTitle("[No file]")
 		self.setWindowTitle('BlackCAT')
 	
 	def call_file_picker(self):
@@ -721,7 +733,7 @@ class main_window(QtWidgets.QMainWindow):
 			self.status_label.setText("Openning file: " + filename)
 			
 			#Clear the controls
-			self.main_widget.main_editor.setRowCount(0)
+			self.main_widget.main_table.setRowCount(0)
 			self.main_widget.source_text.setText('')
 			self.main_widget.target_text.setText('')
 			
@@ -734,10 +746,10 @@ class main_window(QtWidgets.QMainWindow):
 			self.open_file_thread.start()	
 		
 	def open_file_onFinish(self, filename, result):
-		self.main_widget.main_editor.setRowCount(len(result))
+		self.main_widget.main_table.setRowCount(len(result))
 		self.max_plurals_in_file = 0
 		plurals_offset = 0
-		# row [0]=id, [1]=source text, [2]=target text, [3]=fuzzy flag, [4]=plural index, [5]=plural form
+		# row [0]=id, [1]=source text, [2]=target text, [3]=fuzzy flag, [4]=plural index, [5]=plural form, [6]=previous source
 		for index, row in enumerate(result):
 			if row[4]==0 or row[4] is None:
 				row_id = QtWidgets.QTableWidgetItem(str(row[0]))
@@ -752,9 +764,11 @@ class main_window(QtWidgets.QMainWindow):
 						row_id.setBackground(QtGui.QColor(0, 255, 0))
 				row_source.setTextAlignment(QtCore.Qt.AlignTop)
 				row_target.setTextAlignment(QtCore.Qt.AlignTop)
-				self.main_widget.main_editor.setItem(index - plurals_offset, 0, row_id)
-				self.main_widget.main_editor.setItem(index - plurals_offset, 1, row_source)
-				self.main_widget.main_editor.setItem(index - plurals_offset, 2, row_target)
+				self.main_widget.main_table.setItem(index - plurals_offset, 0, row_id)
+				self.main_widget.main_table.setItem(index - plurals_offset, 1, row_source)
+				self.main_widget.main_table.setItem(index - plurals_offset, 2, row_target)
+				if row[6] is not None:
+					self.previous_source[str(row[0])] = row[6]
 				self.status_label.setText("Openning file: " + filename + " (loading segment " + str(index + 1) + " of " + str(len(result)) + ")" )
 				QtWidgets.QApplication.processEvents()
 			else:
@@ -763,11 +777,11 @@ class main_window(QtWidgets.QMainWindow):
 				self.plurals[row[1], row[4]] = [row[2], row[3], row[5]]
 				plurals_offset = plurals_offset + 1
 		
-		self.main_widget.main_editor.setRowCount(len(result) - plurals_offset)
+		self.main_widget.main_table.setRowCount(len(result) - plurals_offset)
 	
 		self.filename = filename
 		self.previous_translated_text = ''
-		self.main_widget.main_editor_groupbox.setTitle(filename)
+		self.main_widget.main_table_groupbox.setTitle(filename)
 		
 		self.main_widget.main_h_splitter.setEnabled(True)
 		self.status_label.setText("Ready.")
@@ -837,9 +851,7 @@ class main_window(QtWidgets.QMainWindow):
 		settings.setValue('height', self.height())
 		settings.setValue('x_position', self.x())
 		settings.setValue('y_position', self.y())
-		settings.setValue('editor_splitter_settings', self.main_widget.editor_v_splitter.saveState())
-		settings.setValue('main_splitter_settings', self.main_widget.main_h_splitter.saveState())
-		settings.setValue('plugins_splitter_settings', self.main_widget.plugins_v_splitter.saveState())
+		settings.setValue('main_window_settings', self.saveState())
 		settings.setValue('number_of_loaded_plugins', len(self.list_of_loaded_plugin_widgets))
 		if self.recent_files is not None:
 			settings.setValue('recent_files', list(dict.fromkeys(self.recent_files[::-1]))[:10])

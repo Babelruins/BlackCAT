@@ -14,17 +14,16 @@ class plugin_thread(QtCore.QThread):
 		self.aborted = False
 	
 	def run(self):
-		matching_segments = db_op.get_translation_memory(self.options['project_file_path'], self.options['segment_id'], self.options['source_language'], self.options['target_language'], self.options['source_text'], self.options['filename'], 60)
+		matching_segments = db_op.get_translation_memory(self.options['project_file_path'], self.options['segment_id'], self.options['source_language'], self.options['target_language'], self.options['source_text'], self.options['filename'], 50)
 		
 		if not self.aborted:
 			self.finished.emit(matching_segments)
 
-class main_widget(QtWidgets.QGroupBox):
+class main_widget(QtWidgets.QWidget):
 	def __init__(self):
 		super(main_widget, self).__init__()
 
 		self.name = "Translation Memory"
-		self.setTitle('Translation Memory')
 		
 		main_layout = QtWidgets.QGridLayout(self)
 		

@@ -47,12 +47,11 @@ class plugin_thread(QtCore.QThread):
 		if not self.aborted:
 			self.finished.emit(self.source, response)
 
-class main_widget(QtWidgets.QGroupBox):
+class main_widget(QtWidgets.QWidget):
 	def __init__(self):
 		super(main_widget, self).__init__()
 		
 		self.name = "Machine Translation"
-		self.setTitle("Machine Translation")
 		
 		self.plugin_threads = {}
 		
