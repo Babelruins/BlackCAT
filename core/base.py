@@ -728,7 +728,7 @@ class main_window(QtWidgets.QMainWindow):
 			print("Unsupported file with extension " + file_extension)
 		
 	def open_file_for_translation(self, filename):
-		self.main_widget.main_h_splitter.setEnabled(False)
+		self.main_widget.setEnabled(False)
 		if filename != self.filename:
 			self.status_label.setText("Openning file: " + filename)
 			
@@ -783,7 +783,7 @@ class main_window(QtWidgets.QMainWindow):
 		self.previous_translated_text = ''
 		self.main_widget.main_table_groupbox.setTitle(filename)
 		
-		self.main_widget.main_h_splitter.setEnabled(True)
+		self.main_widget.setEnabled(True)
 		self.status_label.setText("Ready.")
 		self.main_widget.target_text.setFocus()
 		
