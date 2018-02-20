@@ -30,7 +30,12 @@ def import_file(options):
 	imported_segments = db_op.get_source_segments_in_db(options['project_path'], options['source_language'], filename)
 	
 	#Get the segments in file
-	segments_in_file = tokenizer.tokenize(text)
+	divisions_in_file = tokenizer.tokenize(text)
+	segments_in_file = []
+	for division in divisions_in_file:
+		for line in division.split('\n'):
+			if line != '':
+				segments_in_file.append(line)
 	
 	#If the segment exists in the db but not in the file...
 	for row in imported_segments:
@@ -73,22 +78,26 @@ def generate_file(options):
 	file = open(options['file_path'], encoding=encoding)
 	text = file.read()
 	translated_data = ''
-	segments = tokenizer.tokenize(text)
+	divisions = tokenizer.tokenize(text)
 	positions = tokenizer.span_tokenize(text)
 	last_segment_ending_position = 0
 
-	for segment, position in zip(segments, positions):
+	for division, position in zip(divisions, positions):
 		translated_data = translated_data + text[last_segment_ending_position:position[0]]
-		#if segments_in_db[segment][0] is None:
-		#	translated_data = translated_data + segment
-		#else:
-		#	translated_data = translated_data + segments_in_db[segment][0]
 		
-		translated_segment = db_op.get_translated_segment(options['project_path'], options['source_language'], options['target_language'], filename, segment)
-		if translated_segment is None:
-			translated_data = translated_data + segment
-		else:
-			translated_data = translated_data + translated_segment[1]
+		first_line = True
+		for line in division.split('\n'):
+			translated_segment = db_op.get_translated_segment(options['project_path'], options['source_language'], options['target_language'], filename, line)
+			
+			if not first_line:
+				translated_data = translated_data + '\n'
+			else:
+				first_line = False
+			
+			if translated_segment is None:
+				translated_data = translated_data + line
+			else:
+				translated_data = translated_data + translated_segment[1]
 		
 		last_segment_ending_position = position[1]
 	file.close()
