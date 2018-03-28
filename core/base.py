@@ -230,6 +230,7 @@ class main_window(QtWidgets.QMainWindow):
 		
 		#load the plugins
 		self.list_of_loaded_plugin_widgets = []
+		self.plugin_docks_list = []
 		for plugin_widget in plugins.list_of_widgets:
 			new_widget = plugin_widget()
 			self.list_of_loaded_plugin_widgets.append(new_widget)
@@ -237,6 +238,7 @@ class main_window(QtWidgets.QMainWindow):
 			plugin_dock.setObjectName(new_widget.name)
 			plugin_dock.setWidget(new_widget)
 			self.addDockWidget(QtCore.Qt.RightDockWidgetArea, plugin_dock)
+			self.plugin_docks_list.append(plugin_dock)
 		
 		#Load the settings
 		self.recent_files = []
@@ -326,6 +328,7 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget.source_text.context_menu = self.main_widget.source_text.createStandardContextMenu()
 		self.main_widget.source_text.context_menu.addSeparator()
 		self.main_widget.source_text.context_menu.addAction("Google Search in Browser", lambda: webbrowser.open_new_tab('https://www.google.com/search?q=' + self.main_widget.source_text.textCursor().selectedText()))
+		self.main_widget.source_text.context_menu.addAction("All plugins lookup", lambda: self.trigger_plugins(source_text=self.main_widget.source_text.textCursor().selectedText()))
 		#for plugin in self.list_of_loaded_plugin_widgets:
 		#		if hasattr(plugin, 'secondary_action'):
 		#		self.main_widget.source_text.context_menu.addAction(plugin.name, lambda name=plugin.name:self.secondary_action_trigger(name, self.main_widget.source_text.textCursor().selectedText()))
@@ -335,6 +338,7 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget.target_text.context_menu = self.main_widget.target_text.createStandardContextMenu()
 		self.main_widget.target_text.context_menu.addSeparator()
 		self.main_widget.target_text.context_menu.addAction("Google Search in Browser", lambda: webbrowser.open_new_tab('https://www.google.com/search?q=' + self.main_widget.target_text.textCursor().selectedText()))
+		self.main_widget.source_text.context_menu.addAction("All plugins lookup", lambda: self.trigger_plugins(source_text=self.main_widget.source_text.textCursor().selectedText()))
 		#for plugin in self.list_of_loaded_plugin_widgets:
 		#	if hasattr(plugin, 'secondary_action'):
 		#		self.main_widget.target_text.context_menu.addAction(plugin.name, lambda name=plugin.name:self.secondary_action_trigger(name, self.main_widget.target_text.textCursor().selectedText()))
@@ -367,6 +371,11 @@ class main_window(QtWidgets.QMainWindow):
 		self.menu_file_close.setStatusTip('Close current project')
 		self.menu_file_close.triggered.connect(self.close_current_project)
 		
+		self.menu_file_exit = QtWidgets.QAction(QtGui.QIcon('exit.png'), '&Exit', self)
+		self.menu_file_exit.setShortcut('Ctrl+Q')
+		self.menu_file_exit.setStatusTip('Exit application')
+		self.menu_file_exit.triggered.connect(QtWidgets.qApp.quit)
+		
 		self.menu_project_project_files = QtWidgets.QAction('Project Files &List', self)
 		self.menu_project_project_files.setShortcut('Ctrl+L')
 		self.menu_project_project_files.setStatusTip('Show a list of the files in the current project')
@@ -381,11 +390,6 @@ class main_window(QtWidgets.QMainWindow):
 		self.menu_project_generate_translated_files.setShortcut('Ctrl+G')
 		self.menu_project_generate_translated_files.setStatusTip('Generates translated files from the ones imported into the project')
 		self.menu_project_generate_translated_files.triggered.connect(self.generate_translated_files)
-		
-		self.menu_file_exit = QtWidgets.QAction(QtGui.QIcon('exit.png'), '&Exit', self)
-		self.menu_file_exit.setShortcut('Ctrl+Q')
-		self.menu_file_exit.setStatusTip('Exit application')
-		self.menu_file_exit.triggered.connect(QtWidgets.qApp.quit)
 		
 		self.menu_help_about = QtWidgets.QAction('&About', self)
 		self.menu_help_about.setShortcut('Ctrl+A')
@@ -412,6 +416,13 @@ class main_window(QtWidgets.QMainWindow):
 		self.menu_project.addAction(self.menu_project_project_files)
 		self.menu_project.addAction(self.menu_project_import_tm)
 		self.menu_project.addAction(self.menu_project_generate_translated_files)
+		
+		#View menu
+		self.menu_view = self.menu_bar.addMenu('&View')
+		self.menu_view.addAction(self.current_segment_dock.toggleViewAction())
+		if self.plugin_docks_list is not None:
+			for plugin_dock in self.plugin_docks_list:
+				self.menu_view.addAction(plugin_dock.toggleViewAction())
 		
 		#Help menu
 		self.menu_help = self.menu_bar.addMenu('&Help')
@@ -516,13 +527,18 @@ class main_window(QtWidgets.QMainWindow):
 			#Let's work on the current string
 			if current_row != previous_row:
 				if not self.working_with_plurals:
-					self.main_widget.source_text.setText(current_source_text)
-					self.main_widget.target_text.setText(self.main_widget.main_table.item(current_row, 2).text())
+					self.main_widget.source_text.setPlainText(current_source_text)
+					self.main_widget.target_text.setPlainText(self.main_widget.main_table.item(current_row, 2).text())
 				else:
-					self.main_widget.source_text.setHtml('<font color="gray">Singular:</font><br>' + current_source_text + '<br><br><font color="gray">Plural:</font><br>' + self.plurals[current_source_text,1][2])
-					self.main_widget.target_text.setText(self.main_widget.main_table.item(current_row, 2).text())
+					#self.main_widget.source_text.setHtml('<font color="gray">Singular:</font><br>' + current_source_text + '<br><br><font color="gray">Plural:</font><br>' + self.plurals[current_source_text,1][2])
+					self.main_widget.source_text.setHtml('<font color="gray">Singular:</font><br>')
+					self.main_widget.source_text.insertPlainText(current_source_text)
+					self.main_widget.source_text.insertHtml('<br><br><font color="gray">Plural:</font><br>')
+					self.main_widget.source_text.insertPlainText(self.plurals[current_source_text,1][2])
+					
+					self.main_widget.target_text.setPlainText(self.main_widget.main_table.item(current_row, 2).text())
 					for i in range(plurals_count):
-						self.main_widget.current_segment_target_tab_widget.widget(i+1).setText(self.plurals[current_source_text,i+1][0])
+						self.main_widget.current_segment_target_tab_widget.widget(i+1).setPlainText(self.plurals[current_source_text,i+1][0])
 						self.previous_plurals = {}
 						self.previous_plurals[i+1] = self.main_widget.current_segment_target_tab_widget.widget(i+1).toPlainText()
 				
@@ -537,22 +553,25 @@ class main_window(QtWidgets.QMainWindow):
 					self.previous_fuzzy_status = False
 				
 				#Get the plugins to work
-				plugin_options = {}
-				plugin_options['project_file_path'] = self.project_path
-				plugin_options['filename'] = self.filename
-				plugin_options['segment_id'] = self.main_widget.main_table.item(current_row, 0).text()
-				plugin_options['source_text'] = current_source_text
-				plugin_options['target_text'] = self.main_widget.target_text.toPlainText()
-				plugin_options['source_language'] = self.source_language
-				plugin_options['target_language'] = self.target_language
-				for plugin_widget in self.list_of_loaded_plugin_widgets:
-					plugin_widget.main_action(plugin_options)
+				self.trigger_plugins(self.main_widget.main_table.item(current_row, 0).text(), current_source_text, self.main_widget.target_text.toPlainText())
 					
 				#Show previous source text in status bar
 				if self.main_widget.main_table.item(current_row, 0).text() in self.previous_source.keys():
 					self.status_label.setText("Old source text: " + repr(self.previous_source[self.main_widget.main_table.item(current_row, 0).text()]))
 				else:
 					self.status_label.setText("Ready.")
+
+	def trigger_plugins(self, segment_id=None, source_text=None, target_text=None):
+		plugin_options = {}
+		plugin_options['project_file_path'] = self.project_path
+		plugin_options['filename'] = self.filename
+		plugin_options['segment_id'] = segment_id
+		plugin_options['source_text'] = source_text
+		plugin_options['target_text'] = target_text
+		plugin_options['source_language'] = self.source_language
+		plugin_options['target_language'] = self.target_language
+		for plugin_widget in self.list_of_loaded_plugin_widgets:
+			plugin_widget.main_action(plugin_options)
 	
 	def db_thread_on_finish(self, options):
 		if options['action'] == 'save_variant':

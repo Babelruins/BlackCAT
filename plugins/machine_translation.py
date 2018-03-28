@@ -80,7 +80,7 @@ class main_widget(QtWidgets.QWidget):
 		main_layout.addWidget(self.mt_table, 0, 0)
 		
 	def contextMenuEvent(self, pos):
-		self.target_text = self.parent().parent().parent().target_text
+		self.target_text = self.parent().parent().main_widget.target_text
 	
 		self.context_menu = QtWidgets.QMenu()
 		insert_translation_action = QtWidgets.QAction("Insert machine translation")

@@ -57,7 +57,7 @@ class main_widget(QtWidgets.QWidget):
 		self.limit = 50
 	
 	def contextMenuEvent(self, pos):
-		self.target_text = self.parent().parent().parent().target_text
+		self.target_text = self.parent().parent().main_widget.target_text
 	
 		if self.candidates_box.currentRow() >= 0:
 			self.context_menu = QtWidgets.QMenu()

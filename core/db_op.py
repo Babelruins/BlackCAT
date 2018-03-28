@@ -17,6 +17,7 @@ def create_project_db(self, project_file_path, source_language, target_language)
 									segment TEXT NOT NULL,
 									language TEXT NOT NULL,
 									plural TEXT,
+									previous TEXT,
 									source_file TEXT,
 									source_file_index BIGINT,
 									FOREIGN KEY(source_file) REFERENCES source_files(name),
@@ -181,22 +182,29 @@ def get_imported_files_mtime(project_path):
 	project_db.close()
 	return files_already_imported
 	
-def import_source_segment(project_path, segment, source_language, filename, index, plural=""):
+def import_source_segment(project_path, segment, source_language, filename, index, plural="", previous=""):
 	project_db = sqlite3.connect(project_path)
 	project_cursor = project_db.cursor()
 	project_cursor.execute("INSERT INTO source_segments (segment, language, plural, source_file) VALUES(?, ?, ?, ?);", (segment, source_language, plural, filename))
 	project_cursor.execute("UPDATE source_segments SET source_file_index = ? WHERE segment = ? AND language = ? AND source_file = ?;", (index, segment, source_language, filename))
 	if plural != "":
 		project_cursor.execute("UPDATE source_segments SET plural = ? WHERE segment = ? AND language = ? AND source_file = ?;", (plural, segment, source_language, filename))
+	if previous != "":
+		project_cursor.execute("UPDATE source_segments SET previous = ? WHERE segment = ? AND language = ? AND source_file = ?;", (previous, segment, source_language, filename))
 	project_db.commit()
 	project_db.close()
 
 def import_variant(project_path, variant, target_language, fuzzy, filename, segment, plural_index=0):
 	project_db = sqlite3.connect(project_path)
 	project_cursor = project_db.cursor()
-	project_cursor.execute("INSERT OR IGNORE INTO variants (segment, language, fuzzy, source_segment, source_file, plural_index) SELECT ?, ?, ?, source_segments.segment_id, ?, ? FROM source_segments WHERE segment = ?;", (variant, target_language, fuzzy, filename, plural_index, segment))
+	#We need REPLACE for gettext where there could already be translated segements
+	project_cursor.execute("INSERT OR REPLACE INTO variants (segment, language, fuzzy, source_segment, source_file, plural_index) SELECT ?, ?, ?, source_segments.segment_id, ?, ? FROM source_segments WHERE segment = ?;", (variant, target_language, fuzzy, filename, plural_index, segment))
 	project_db.commit()
 	project_db.close()
+
+def chunks(l, n):
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
 	
 def get_translation_memory(project_path, segment_id, source_language, target_language, source_text, filename, ratio_limit):
 	project_db = sqlite3.connect(project_path)
@@ -209,22 +217,26 @@ def get_translation_memory(project_path, segment_id, source_language, target_lan
 		ratio = fuzz.ratio(source_text, row[1])
 		if  ratio >= ratio_limit:
 			matching_segments[row[0]] = ratio
-	list_of_arguments = list(matching_segments.keys())
-	placeholder = '?'
-	placeholders = ', '.join(placeholder for x in list_of_arguments)
-	query = """	SELECT source_segments.segment_id, source_segments.segment, variants.segment, variants.source_file
-				FROM variants
-				JOIN source_segments ON variants.source_segment = source_segments.segment_id
-				WHERE source_segments.segment_id IN ({})
-				AND variants.language = ?
-				AND variants.plural_index = 0
-				AND NOT (variants.source_file == ? AND variants.source_segment == ?);""".format(placeholders)
-	list_of_arguments.append(target_language)
-	list_of_arguments.append(filename)
-	list_of_arguments.append(segment_id)
+
+	#list_of_arguments = list(matching_segments.keys())
+	
 	result = []
-	for row in project_cursor.execute(query, list_of_arguments):
-		result.append(row + (matching_segments[row[0]], ))
+	for list_of_arguments in chunks(list(matching_segments.keys()), 800):
+		placeholder = '?'
+		placeholders = ', '.join(placeholder for x in list_of_arguments)
+		query = """	SELECT source_segments.segment_id, source_segments.segment, variants.segment, variants.source_file
+					FROM variants
+					JOIN source_segments ON variants.source_segment = source_segments.segment_id
+					WHERE source_segments.segment_id IN ({})
+					AND variants.language = ?
+					AND variants.plural_index = 0
+					AND NOT (variants.source_file == ? AND variants.source_segment == ?);""".format(placeholders)
+		list_of_arguments.append(target_language)
+		list_of_arguments.append(filename)
+		list_of_arguments.append(segment_id)
+		
+		for row in project_cursor.execute(query, list_of_arguments):
+			result.append(row + (matching_segments[row[0]], ))
 	
 	return result
 	project_db.close()
@@ -301,7 +313,7 @@ class db_open_file_thread(QtCore.QThread):
 		project_db = sqlite3.connect(self.options['project_path'])
 		project_cursor = project_db.cursor()
 		result = []
-		for row in project_cursor.execute("""	SELECT source_segments.segment_id, source_segments.segment, variants.segment, variants.fuzzy, variants.plural_index, source_segments.plural
+		for row in project_cursor.execute("""	SELECT source_segments.segment_id, source_segments.segment, variants.segment, variants.fuzzy, variants.plural_index, source_segments.plural, source_segments.previous
 												FROM source_segments
 												LEFT OUTER JOIN variants ON ((variants.source_segment = source_segments.segment_id) 
 													AND (variants.language = ?) AND (variants.source_file = ?))
@@ -328,7 +340,8 @@ class db_get_project_statistics(QtCore.QThread):
 		project_cursor.execute("""	SELECT count(source_segments.segment_id)
 									FROM source_segments
 									JOIN variants ON variants.source_segment = source_segments.segment_id
-									WHERE source_segments.source_file IN (SELECT source_files.name FROM source_files);""")
+									WHERE source_segments.source_file IN (SELECT source_files.name FROM source_files)
+									AND variants.fuzzy = 0;""")
 		project_transtaled_segments = project_cursor.fetchone()[0]
 		project_cursor.execute("""	SELECT count(source_segments.segment_id)
 									FROM source_segments
@@ -350,18 +363,23 @@ class db_get_file_statistics(QtCore.QThread):
 		self.aborted = False
 	
 	def run(self):
-		project_db = sqlite3.connect(self.options['project_path'])
-		project_cursor = project_db.cursor()
-		project_cursor.execute("""	SELECT count(source_segments.segment_id)
-									FROM source_segments
-									JOIN variants ON variants.source_segment = source_segments.segment_id
-									WHERE source_segments.source_file = ?;""", (self.options['filename'], ))
-		file_transtaled_segments = project_cursor.fetchone()[0]
-		project_cursor.execute("""	SELECT count(source_segments.segment_id)
-									FROM source_segments
-									WHERE source_segments.source_file = ?;""", (self.options['filename'], ))
-		file_total_segments = project_cursor.fetchone()[0]
-		project_db.close()
+		try:
+			project_db = sqlite3.connect(self.options['project_path'])
+			project_cursor = project_db.cursor()
+			project_cursor.execute("""	SELECT count(source_segments.segment_id)
+										FROM source_segments
+										JOIN variants ON variants.source_segment = source_segments.segment_id
+										WHERE source_segments.source_file = ?
+										AND variants.plural_index = 0
+										AND variants.fuzzy = 0;""", (self.options['filename'], ))
+			file_transtaled_segments = project_cursor.fetchone()[0]
+			project_cursor.execute("""	SELECT count(source_segments.segment_id)
+										FROM source_segments
+										WHERE source_segments.source_file = ?;""", (self.options['filename'], ))
+			file_total_segments = project_cursor.fetchone()[0]
+			project_db.close()
+		except sqlite3.OperationalError:
+			self.finished.emit("-", "-")
 		
 		if not self.aborted:
 			self.finished.emit(file_transtaled_segments, file_total_segments)
