@@ -16,7 +16,7 @@ Import translation memory from:
 ### Windows
 Get Python 3 and install dependencies using pip:
 ````
-pip install PyQt5 nltk polib pycountry bs4 fuzzywuzzy yandex.translate mstranslator chardet lxml
+pip install PyQt5 nltk polib pycountry bs4 fuzzywuzzy yandex.translate mstranslator chardet lxml pyenchant
 ````
 
 You also need the punkt tokenizer for nltk:
@@ -33,7 +33,7 @@ For this you will most probably need to install the Visual C++ Build Tools, you 
 ### Linux
 Get Python 3, pip (python3-pip or equivalent) and Qt5 (python3-qt5 or equivalent). Easiest way to do this is using your distro package manager. Then install the rest of the dependencies using pip:
 ````
-pip3 install polib pycountry bs4 fuzzywuzzy yandex.translate mstranslator chardet lxml python-Levenshtein
+pip3 install nltk polib pycountry bs4 fuzzywuzzy yandex.translate mstranslator chardet lxml python-Levenshtein pyenchant
 ````
 And the punkt tokenizer:
 ````
