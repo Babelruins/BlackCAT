@@ -204,7 +204,11 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget.target_text.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 		self.main_widget.target_text.customContextMenuRequested.connect(self.build_target_context_menu)
 		target_text_highlighter = tags_highlighter(self.main_widget.target_text)
-		target_text_highlighter.set_dictionary(enchant.Dict())
+		#Testing dictionary
+		try:
+			target_text_highlighter.set_dictionary(enchant.Dict())
+		except Exception as e:
+			print( type(e).__name__ + ': ' + str(e))
 
 		#Current segment groupbox
 		self.main_widget.current_segment_groupbox = QtWidgets.QGroupBox()
