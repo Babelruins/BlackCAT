@@ -91,72 +91,97 @@ class generate_translated_files_thread(QtCore.QThread):
 					self.progress.emit("<font color=\"orange\">WARNING: File '" + file + "' has not been imported yet, it will not be processed.</font>")
 		self.finished.emit()
 
-class import_files_thread(QtCore.QThread):
-	progress = QtCore.pyqtSignal(object)
+class import_files_worker(QtCore.QObject):
+	start = QtCore.pyqtSignal(object)
+	process_file_list = QtCore.pyqtSignal(object, object)
+	progress = QtCore.pyqtSignal(object, object, object, object)
+	status_update = QtCore.pyqtSignal(object)
 	finished = QtCore.pyqtSignal(object)
+	finished_import = QtCore.pyqtSignal()
 	
-	def __init__(self, options, on_progress, on_finish, parent=None):
-		QtCore.QThread.__init__(self, parent)
-		self.options = options
-		self.progress.connect(on_progress)
-		self.finished.connect(on_finish)
+	def __init__(self):
+		super(import_files_worker, self).__init__()
+		self.start.connect(self.run, QtCore.Qt.QueuedConnection)
+		self.process_file_list.connect(self.import_file_list_into_project, QtCore.Qt.QueuedConnection)
+		self.mutex = QtCore.QMutex()
+	
+	@QtCore.pyqtSlot(object)
+	def run(self, options):
+		self.mutex.lock()
 		
-	def run(self):
-		#If the item is a file and is not already imported, import it
+		self.options = options
+		self.options['source_file_dir'] = sorted(self.options['source_file_dir'])
+		self.update_imported_files_list()
+		
+		self.mutex.unlock()
+		
+	def update_imported_files_list(self):
+		self.status_update.emit("Scanning 'source_files' directory...")
 		valid_files = []
+		self.options['files_already_imported'] = db_op.get_imported_files_details(self.options['project_path'])
 		for file in self.options['source_file_dir']:
-			self.progress.emit("Processing '" + file + "' ...")
 			file_path = os.path.join(self.options['project_dir'], 'source_files', file)
 			if (os.path.isfile(file_path)):
-				valid_files.append(file)
-				new_m_time = os.path.getmtime(file_path)
+				new_m_time = int(os.path.getmtime(file_path))
 				if file not in self.options['files_already_imported']:
-					self.progress.emit("'" + file + "' has not been imported yet, processing ...")
-					self.import_file_into_project(file_path, new_m_time)
+					self.progress.emit(2, file, self.options['files_already_imported'][file], new_m_time)
 				else:
-					#Do the same for the files that have changed
-					if self.options['files_already_imported'][file] != new_m_time:
-						self.progress.emit("'" + file + "' has changed, processing ...")
-						self.import_file_into_project(file_path, new_m_time)
+					valid_files.append(file)
+					if self.options['files_already_imported'][file][1] != new_m_time:
+						self.progress.emit(1, file, self.options['files_already_imported'][file], new_m_time)
 					else:
-						self.progress.emit("'" + file + "' has not changed, skipping ...")
+						self.progress.emit(0, file, self.options['files_already_imported'][file], new_m_time)
 			else:
-				self.progress.emit("'" + file + "' is not a file.")
-		
+				self.status_update.emit(file + ": not a file.")
+				
 		#If a file has been deleted from the source_file dir but still in the database:
 		for file in self.options['files_already_imported']:
 			if file not in valid_files:
+				self.status_update.emit(file + ": file not found, saving as translation memory...")
 				db_op.save_file_as_tm(self.options['project_path'], file)
-				
+				self.status_update.emit(file + ": Done.")
+		
+		self.status_update.emit("Done.")
 		self.finished.emit(valid_files)
 	
-	def import_file_into_project(self, file_path, m_time):
+	@QtCore.pyqtSlot(object, object)
+	def import_file_list_into_project(self, file_list, options):
+		self.mutex.lock()
+		
+		for file in file_list:
+			self.import_file_into_project(file, file_list[file], options)
+	
+		self.finished_import.emit()
+		self.mutex.unlock()
+		
+	def import_file_into_project(self, file, m_time, options):
+		self.status_update.emit("Processing '" + file + "' ...")
 		text_processor_options = {}
-		text_processor_options['project_path'] = self.options['project_path']
-		text_processor_options['file_path'] = file_path
-		text_processor_options['source_language'] = self.options['source_language']
-		text_processor_options['target_language'] = self.options['target_language']
+		text_processor_options['project_path'] = options['project_path']
+		text_processor_options['file_path'] = os.path.join(options['project_dir'], 'source_files', file)
+		text_processor_options['source_language'] = options['source_language']
+		text_processor_options['target_language'] = options['target_language']
 		text_processor_options['m_time'] = m_time
 	
 		#first check file type
-		file_extension = os.path.splitext(file_path)[1]
+		file_extension = os.path.splitext(text_processor_options['file_path'])[1]
 		try:
 			if file_extension == ".txt":
 				text_processors.punkt.import_file(text_processor_options)
-				self.progress.emit('<font color="green">Success!</font>')
+				self.status_update.emit('<font color="green">Success!</font>')
 			elif file_extension == ".odt":
 				text_processors.odt.import_file(text_processor_options)
-				self.progress.emit('<font color="green">Success!</font>')
+				self.status_update.emit('<font color="green">Success!</font>')
 			elif file_extension == ".sgml":
 				text_processors.sgml.import_file(text_processor_options)
-				self.progress.emit('<font color="green">Success!</font>')
+				self.status_update.emit('<font color="green">Success!</font>')
 			elif file_extension == ".po":
 				text_processors.gettext.import_file(text_processor_options)
-				self.progress.emit('<font color="green">Success!</font>')
+				self.status_update.emit('<font color="green">Success!</font>')
 			else:
-				self.progress.emit("<font color=\"orange\">WARNING: Unsupported file extension '" + file_extension + "'.</font>")
+				self.status_update.emit("<font color=\"orange\">WARNING: Unsupported file extension '" + file_extension + "'.</font>")
 		except Exception as e:
-			self.progress.emit('<font color="red">' + type(e).__name__ + ': ' + str(e) + '</font>')
+			self.status_update.emit('<font color="red">' + type(e).__name__ + ': ' + str(e) + '</font>')
 
 class main_window(QtWidgets.QMainWindow):
 	def __init__(self):
@@ -291,6 +316,15 @@ class main_window(QtWidgets.QMainWindow):
 		self.db_background_worker = db_op.db_worker()
 		self.db_background_worker.finished.connect(self.db_thread_on_finish)
 		self.db_background_worker.moveToThread(self.db_thread)
+		
+		self.files_thread = QtCore.QThread(self)
+		self.files_thread.start()
+		self.file_background_worker = import_files_worker()
+		self.file_background_worker.progress.connect(self.open_project_on_progress)
+		self.file_background_worker.status_update.connect(self.open_project_on_status_update)
+		self.file_background_worker.finished.connect(self.open_project_on_finish)
+		self.file_background_worker.finished_import.connect(self.open_project_on_finish_import)
+		self.file_background_worker.moveToThread(self.files_thread)
 	
 	def reset_globals(self):
 		self.filename = ''
@@ -576,7 +610,7 @@ class main_window(QtWidgets.QMainWindow):
 		plugin_options['target_language'] = self.target_language
 		for plugin_widget in self.list_of_loaded_plugin_widgets:
 			plugin_widget.main_action(plugin_options)
-	
+
 	def db_thread_on_finish(self, options):
 		if options['action'] == 'save_variant':
 			self.main_status_bar.showMessage("Segment #" + str(options['source_segment_id']) + " saved.", 3000)
@@ -619,9 +653,6 @@ class main_window(QtWidgets.QMainWindow):
 		#Get the settings
 		self.source_language = db_op.get_setting(self.project_path, 'source_language')
 		self.target_language = db_op.get_setting(self.project_path, 'target_language')
-		
-		#Get the list of the files at source_files that were already imported to the project
-		files_already_imported = db_op.get_imported_files_mtime(self.project_path)
 			
 		#Save in recent files
 		self.recent_files.append(self.project_path)
@@ -634,34 +665,29 @@ class main_window(QtWidgets.QMainWindow):
 		options = {}
 		options['project_dir'] = self.project_dir
 		options['source_file_dir'] = source_file_dir
-		options['files_already_imported'] = files_already_imported
 		options['project_path'] = self.project_path
 		options['source_language'] = self.source_language
 		options['target_language'] = self.target_language
 		
-		if source_file_dir:
-			import_thread = import_files_thread(options, self.open_project_on_progress, self.open_project_on_finish, self)
-			self.status_msgbox = dialogs.status_dialog("Scan source files directory", "Processing files...")
-			#self.status_msgbox.show()
-			import_thread.start()
-			self.status_msgbox.exec_()
-			self.call_file_picker()
-			
-		else:
-			error_message_box = QtWidgets.QMessageBox()
-			error_message_box.setText("No valid source files were found. Please copy some supported files in the source_files directory of the project and try opening it again.")
-			error_message_box.setIcon(QtWidgets.QMessageBox.Critical)
-			error_message_box.exec_()
+		self.import_files_box = dialogs.import_files_dialog(options, self.file_background_worker)
+		self.file_background_worker.start.emit(options)
+		self.import_files_box.exec_()
+		self.call_file_picker()
 
-	def open_project_on_progress(self, message):
-		self.status_msgbox.add_text(message)
+	def open_project_on_progress(self, status, filename, details, m_time):
+		self.import_files_box.add_to_table(status, filename, details, m_time)
 	
+	def open_project_on_status_update(self, message):
+		self.import_files_box.update_status(message)
+		
 	def open_project_on_finish(self, valid_files):
 		self.valid_files = valid_files
 		self.status_label.setText("Ready.")
 		self.update_status_bar_project()
-		self.status_msgbox.tasks_completed()
-		#self.call_file_picker()
+		self.import_files_box.tasks_completed()
+		
+	def open_project_on_finish_import(self):
+		self.import_files_box.update_table()
 	
 	def update_status_bar_project(self):
 		options = {}

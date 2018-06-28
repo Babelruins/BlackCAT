@@ -1,6 +1,6 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 from core import db_op
-import pycountry, os
+import pycountry, os, datetime
 
 class file_picker_dialog(QtWidgets.QDialog):
 	def __init__(self, files_in_dir):
@@ -149,3 +149,144 @@ class status_dialog(QtWidgets.QDialog):
 		self.progress_bar.setRange(0,1)
 		self.progress_bar.setValue(1)
 		self.accept_button.setEnabled(True)
+
+class import_files_dialog(QtWidgets.QDialog):
+
+	def __init__(self, options, file_background_worker):
+		super(import_files_dialog, self).__init__()
+		
+		self.options = options
+		self.file_background_worker = file_background_worker
+		
+		self.setWindowTitle("Import files into project")
+		self.setWindowFlags(QtCore.Qt.WindowTitleHint)
+		self.setWindowFlags(QtCore.Qt.WindowSystemMenuHint)
+		self.setWindowIcon(QtGui.QIcon('whitecat_256x256.png'))
+		self.setMinimumSize(800, 600)
+		
+		layout = QtWidgets.QGridLayout(self)
+		layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
+		
+		self.file_list_table = QtWidgets.QTableWidget(self)
+		self.file_list_table.setMinimumHeight(400)
+		self.file_list_table.setMaximumHeight(400)
+		self.file_list_table.setColumnCount(7)
+		self.file_list_table.setHorizontalHeaderLabels(["Status", "File name", "Encoding", "Algorithm", "Previous modification", "Last modification", "mtime"])
+		self.file_list_table.verticalHeader().hide()
+		self.file_list_table.setAlternatingRowColors(True)
+		self.file_list_table.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
+		self.file_list_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+		self.file_list_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+		#self.file_list_table.cellClicked.connect(self.file_list_table_cellClicked)
+		self.file_list_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+		self.table_header = self.file_list_table.horizontalHeader()
+		self.table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+		self.table_header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+		self.table_header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+		self.table_header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+		self.table_header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+		self.table_header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)
+		self.file_list_table.setColumnHidden(6, True)
+		self.file_list_table.setEnabled(False)
+		#self.file_list_table.horizontalHeader().setResizeMode(QtWidgets.QHeaderView.Stretch)
+		
+		self.status_group = QtWidgets.QGroupBox("Status")
+		self.status_group.setMaximumHeight(200)
+		self.status_text = QtWidgets.QTextEdit()
+		self.status_text.setReadOnly(True)
+		#self.status_text.setMaximumHeight(100)
+		self.progress_bar = QtWidgets.QProgressBar()
+		self.progress_bar.setRange(0,0)
+		self.progress_bar.setMinimumWidth(300)
+		self.progress_bar.setAlignment(QtCore.Qt.AlignCenter)
+		self.status_layout = QtWidgets.QVBoxLayout()
+		self.status_layout.addWidget(self.status_text)
+		self.status_layout.addWidget(self.progress_bar)
+		self.status_group.setLayout(self.status_layout)
+		
+		self.actions_group = QtWidgets.QGroupBox("Actions")
+		self.reimport_checked_button = QtWidgets.QPushButton("(Re-)import checked")
+		self.reimport_checked_button.clicked.connect(self.reimport_checked)
+		self.reimport_all_button = QtWidgets.QPushButton("(Re-)import everything")
+		self.reimport_all_button.clicked.connect(self.reimport_everthing)
+		self.close_button = QtWidgets.QPushButton("Close")
+		self.close_button.clicked.connect(self.close)
+		self.actions_layout = QtWidgets.QVBoxLayout()
+		self.actions_layout.addWidget(self.reimport_checked_button)
+		self.actions_layout.addWidget(self.reimport_all_button)
+		self.actions_layout.addWidget(self.close_button)
+		self.actions_group.setLayout(self.actions_layout)
+		self.actions_group.setEnabled(False)
+		
+		layout.addWidget(self.file_list_table, 0, 0, 1, 2)
+		layout.addWidget(self.status_group, 1, 0, 1, 1)
+		layout.addWidget(self.actions_group, 1, 1, 1, 1)
+		
+	def update_status(self, text):
+		self.status_text.append(text)
+		
+	def add_to_table(self, status, filename, details, m_time):
+		row_position = self.file_list_table.rowCount()
+		self.file_list_table.insertRow(row_position)
+		checkbox = QtWidgets.QTableWidgetItem()
+		status_text = "UNKNOWN"
+		if status == 0:
+			status_text = "OK"
+			checkbox.setCheckState(QtCore.Qt.Unchecked)
+		elif status == 1:
+			status_text = "Changed"
+			checkbox.setCheckState(QtCore.Qt.Checked)
+		elif status == 2:
+			status_text = "NEW"
+			checkbox.setCheckState(QtCore.Qt.Checked)
+		checkbox.setText(status_text)
+		
+		self.file_list_table.setItem(row_position, 0, checkbox)
+		self.file_list_table.setItem(row_position, 1, QtWidgets.QTableWidgetItem(filename))
+		self.file_list_table.setItem(row_position, 2, QtWidgets.QTableWidgetItem(details[2]))
+		self.file_list_table.setItem(row_position, 3, QtWidgets.QTableWidgetItem(details[0]))
+		old_mtime = datetime.datetime.fromtimestamp(details[1])
+		old_mtime_widget = QtWidgets.QTableWidgetItem(old_mtime.strftime('%Y-%m-%d %H:%M:%S'))
+		#old_mtime_widget.setTextAlignment(QtCore.Qt.AlignRight)
+		self.file_list_table.setItem(row_position, 4, old_mtime_widget)
+		new_mtime = datetime.datetime.fromtimestamp(m_time)
+		new_mtime_widget = QtWidgets.QTableWidgetItem(new_mtime.strftime('%Y-%m-%d %H:%M:%S'))
+		#new_mtime_widget.setTextAlignment(QtCore.Qt.AlignRight)
+		self.file_list_table.setItem(row_position, 5, new_mtime_widget)
+		self.file_list_table.setItem(row_position, 6, QtWidgets.QTableWidgetItem(str(m_time)))
+	
+	def reimport_checked(self):
+		self.file_list_table.setEnabled(False)
+		self.actions_group.setEnabled(False)
+		self.progress_bar.setRange(0,0)
+		file_list = {}
+		for row in range(self.file_list_table.rowCount()):
+			if self.file_list_table.item(row, 0).checkState() == QtCore.Qt.Checked:
+				file_list[self.file_list_table.item(row, 1).text()] = self.file_list_table.item(row, 6).text()
+		self.file_background_worker.process_file_list.emit(file_list, self.options)
+	
+	def reimport_everthing(self):
+		self.file_list_table.setEnabled(False)
+		self.actions_group.setEnabled(False)
+		self.progress_bar.setRange(0,0)
+		file_list = {}
+		for row in range(self.file_list_table.rowCount()):
+			file_list[self.file_list_table.item(row, 1).text()] = self.file_list_table.item(row, 6).text()
+		self.file_background_worker.process_file_list.emit(file_list, self.options)
+	
+	#Not used
+	def file_list_table_cellClicked(self, row, column):
+		if self.file_list_table.item(row, 0).checkState() == QtCore.Qt.Checked:
+			self.file_list_table.item(row, 0).setCheckState(QtCore.Qt.Unchecked)
+		else:
+			self.file_list_table.item(row, 0).setCheckState(QtCore.Qt.Checked)
+			
+	def update_table(self):
+		self.file_list_table.setRowCount(0)
+		self.file_background_worker.start.emit(self.options)
+		
+	def tasks_completed(self):
+		self.progress_bar.setRange(0,1)
+		self.progress_bar.setValue(1)
+		self.file_list_table.setEnabled(True)
+		self.actions_group.setEnabled(True)

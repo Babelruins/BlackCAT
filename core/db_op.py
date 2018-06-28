@@ -172,13 +172,13 @@ def get_imported_files(project_path):
 	project_db.close()
 	return files_already_imported
 	
-#Returns a dictionary of the files at source_files that were already imported to the project with their last modification time
-def get_imported_files_mtime(project_path):
+#Returns a dictionary of the files at source_files that were already imported to the project with their details
+def get_imported_files_details(project_path):
 	project_db = sqlite3.connect(project_path)
 	project_cursor = project_db.cursor()
 	files_already_imported = {}
-	for row in project_cursor.execute("SELECT name, m_time FROM source_files;"):
-		files_already_imported[row[0]] = row[1]
+	for row in project_cursor.execute("SELECT name, proc_algorithm, m_time, encoding FROM source_files ORDER BY name;"):
+		files_already_imported[row[0]] = [row[1], row[2], row[3]]
 	project_db.close()
 	return files_already_imported
 	
