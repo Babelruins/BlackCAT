@@ -124,7 +124,7 @@ class import_files_worker(QtCore.QObject):
 			if (os.path.isfile(file_path)):
 				new_m_time = int(os.path.getmtime(file_path))
 				if file not in self.options['files_already_imported']:
-					self.progress.emit(2, file, self.options['files_already_imported'][file], new_m_time)
+					self.progress.emit(2, file, None, new_m_time)
 				else:
 					valid_files.append(file)
 					if self.options['files_already_imported'][file][1] != new_m_time:
@@ -569,7 +569,7 @@ class main_window(QtWidgets.QMainWindow):
 					self.main_widget.target_text.setPlainText(self.main_widget.main_table.item(current_row, 2).text())
 				else:
 					#self.main_widget.source_text.setHtml('<font color="gray">Singular:</font><br>' + current_source_text + '<br><br><font color="gray">Plural:</font><br>' + self.plurals[current_source_text,1][2])
-					self.main_widget.source_text.setHtml('<font color="gray">Singular:</font><br>')
+					self.main_widget.source_text.insertHtml('<font color="gray">Singular:</font><br>')
 					self.main_widget.source_text.insertPlainText(current_source_text)
 					self.main_widget.source_text.insertHtml('<br><br><font color="gray">Plural:</font><br>')
 					self.main_widget.source_text.insertPlainText(self.plurals[current_source_text,1][2])

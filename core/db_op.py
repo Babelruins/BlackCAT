@@ -366,7 +366,7 @@ class db_get_file_statistics(QtCore.QThread):
 		try:
 			project_db = sqlite3.connect(self.options['project_path'])
 			project_cursor = project_db.cursor()
-			project_cursor.execute("""	SELECT count(source_segments.segment_id)
+			project_cursor.execute("""	SELECT count(DISTINCT source_segments.segment_id)
 										FROM source_segments
 										JOIN variants ON variants.source_segment = source_segments.segment_id
 										WHERE source_segments.source_file = ?
