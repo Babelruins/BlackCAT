@@ -1,6 +1,7 @@
 import polib, os
 from PyQt5 import QtCore
 from core import db_op
+from time import localtime, strftime
 
 def import_file(options):
 	po_file = polib.pofile(options['file_path'])
@@ -37,7 +38,7 @@ def import_file(options):
 def generate_file(options):
 	filename = os.path.basename(options['file_path'])
 	#segments_in_db = db_op.get_segments_with_plurals_in_db(options['project_path'], options['source_language'], options['target_language'], filename)
-	po_file = polib.pofile(options['file_path'])
+	po_file = polib.pofile(options['file_path'], wrapwidth = 0)
 	for entry in po_file:
 		if entry.msgid_plural != '':
 			is_fuzzy = False
@@ -60,4 +61,5 @@ def generate_file(options):
 					entry.flags.append('fuzzy')
 	
 	po_file.metadata['X-Generator'] = 'BlackCAT 1.0'
+	po_file.metadata['PO-Revision-Date'] = strftime("%Y-%m-%d %H:%M%z", localtime())
 	po_file.save(os.path.join(options['project_dir'], 'processed_files', filename))
