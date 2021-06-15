@@ -47,11 +47,27 @@ class plugin_thread(QtCore.QThread):
 		if not self.aborted:
 			self.finished.emit(self.source, response)
 
+class main_worker(QtCore.QObject):
+	start = QtCore.pyqtSignal(object)
+	finished = QtCore.pyqtSignal(object)
+
+	def __init__(self):
+		super(main_worker, self).__init__()
+		self.start.connect(self.run)
+		self.mutex = QtCore.QMutex()
+
+	@QtCore.pyqtSlot(object)
+	def run(self, object):
+		self.mutex.lock()
+		self.mutex.unlock()
+
 class main_widget(QtWidgets.QWidget):
 	def __init__(self):
 		super(main_widget, self).__init__()
 		
 		self.name = "Machine Translation"
+		self.running = False
+		self.abort = False
 		
 		self.plugin_threads = {}
 		
@@ -107,7 +123,7 @@ class main_widget(QtWidgets.QWidget):
 				self.plugin_threads[source].quit()
 			self.plugin_threads[source] = plugin_thread(options, source, self.onFinish, self)
 			self.plugin_threads[source].start()
-	
+
 	def onFinish(self, provider, response):
 		if provider == "gtranslateweb":
 			self.mt_table.setItem(0 , 1, QtWidgets.QTableWidgetItem(response))

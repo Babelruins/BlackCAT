@@ -205,8 +205,46 @@ def import_variant(project_path, variant, target_language, fuzzy, filename, segm
 def chunks(l, n):
     for i in range(0, len(l), n):
         yield l[i:i + n]
+
+def get_source_segments_from_translation_memory(tm_path):
+	project_db = sqlite3.connect(tm_path)
+	project_cursor = project_db.cursor()
+	project_cursor.execute("""	SELECT MIN(source_segments.segment_id), source_segments.segment
+										FROM source_segments
+										JOIN variants ON variants.source_segment = source_segments.segment_id
+										GROUP BY source_segments.segment""")
+	return dict(project_cursor.fetchall())
+	project_db.close()
+
+def get_translation_memory(tm_path, source_segments, target_language, source_text, ratio_limit):
+	project_db = sqlite3.connect(tm_path)
+	project_cursor = project_db.cursor()
+	matching_segments = {}
+	for segment in source_segments:
+		ratio = fuzz.ratio(source_text, source_segments[segment])
+		if ratio >= ratio_limit:
+			matching_segments[segment] = ratio
 	
-def get_translation_memory(project_path, segment_id, source_language, target_language, source_text, filename, ratio_limit):
+	result = []
+	for list_of_arguments in chunks(list(matching_segments.keys()), 800):
+		placeholder = '?'
+		placeholders = ', '.join(placeholder for x in list_of_arguments)
+		query = """	SELECT source_segments.segment_id, source_segments.segment, MIN(variants.segment)
+					FROM variants
+					JOIN source_segments ON variants.source_segment = source_segments.segment_id
+					WHERE source_segments.segment_id IN ({})
+					AND variants.language = ?
+					AND variants.plural_index = 0
+					GROUP BY source_segments.segment_id, source_segments.segment;""".format(placeholders)
+		list_of_arguments.append(target_language)
+		
+		for row in project_cursor.execute(query, list_of_arguments):
+			result.append(row + (matching_segments[row[0]], ))
+	
+	return result
+	project_db.close()
+
+def old_get_translation_memory(project_path, segment_id, source_language, target_language, source_text, filename, ratio_limit):
 	project_db = sqlite3.connect(project_path)
 	project_cursor = project_db.cursor()
 	matching_segments = {}
@@ -378,12 +416,11 @@ class db_get_file_statistics(QtCore.QThread):
 										WHERE source_segments.source_file = ?;""", (self.options['filename'], ))
 			file_total_segments = project_cursor.fetchone()[0]
 			project_db.close()
+			if not self.aborted:
+				self.finished.emit(file_transtaled_segments, file_total_segments)
 		except sqlite3.OperationalError:
 			self.finished.emit("-", "-")
 		
-		if not self.aborted:
-			self.finished.emit(file_transtaled_segments, file_total_segments)
-			
 class db_import_tm_thread(QtCore.QThread):
 	finished = QtCore.pyqtSignal(object)
 	
@@ -455,4 +492,13 @@ class db_worker(QtCore.QObject):
 			project_db.commit()
 			project_db.close()
 			self.finished.emit(options)
+		if options['action'] == 'save_po_entry':
+			po_file = options['po_file']
+			entry_to_save = po_file.find(options['source_text'])
+			if entry_to_save.msgstr:
+				entry_to_save.msgstr = options['target_text']
+			if options['fuzzy_checked'] and ('fuzzy' not in entry_to_save.flags):
+				entry_to_save.flags.append('fuzzy')
+			elif not options['fuzzy_checked'] and ('fuzzy' in entry_to_save.flags):
+				entry_to_save.flags.remove('fuzzy')
 		self.mutex.unlock()

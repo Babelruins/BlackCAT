@@ -3,6 +3,8 @@ import configparser, nltk.data, os, functools, webbrowser, re, enchant
 from core import dialogs, db_op
 import text_processors, plugins
 from bs4 import BeautifulSoup
+from time import localtime, strftime
+import polib
 
 class tags_highlighter(QtGui.QSyntaxHighlighter):
 	def __init__(self, parent=None):
@@ -186,6 +188,22 @@ class import_files_worker(QtCore.QObject):
 class main_window(QtWidgets.QMainWindow):
 	def __init__(self):
 		super(main_window, self).__init__()
+
+		#Threads
+		self.db_thread = QtCore.QThread(self)
+		self.db_thread.start()
+		self.db_background_worker = db_op.db_worker()
+		self.db_background_worker.finished.connect(self.db_thread_on_finish)
+		self.db_background_worker.moveToThread(self.db_thread)
+		
+		self.files_thread = QtCore.QThread(self)
+		self.files_thread.start()
+		self.file_background_worker = import_files_worker()
+		self.file_background_worker.progress.connect(self.open_project_on_progress)
+		self.file_background_worker.status_update.connect(self.open_project_on_status_update)
+		self.file_background_worker.finished.connect(self.open_project_on_finish)
+		self.file_background_worker.finished_import.connect(self.open_project_on_finish_import)
+		self.file_background_worker.moveToThread(self.files_thread)
 		
 		self.reset_globals()
 		self.status_msgbox = None
@@ -193,64 +211,70 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget = QtWidgets.QWidget(self)
 		
 		#Main table
-		self.main_widget.main_table_groupbox = QtWidgets.QGroupBox("[No file]")
-		self.main_widget.main_table_layout = QtWidgets.QVBoxLayout(self.main_widget.main_table_groupbox)
+		self.main_widget_main_table_groupbox = QtWidgets.QGroupBox("[No file]")
+		self.main_widget_main_table_layout = QtWidgets.QVBoxLayout(self.main_widget_main_table_groupbox)
 		
-		self.main_widget.main_table = QtWidgets.QTableWidget(self)
-		self.main_widget.main_table.setColumnCount(3)
-		self.main_widget.main_table.setHorizontalHeaderLabels(["ID", "Source text", "Target text"])
-		#self.main_widget.main_table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
-		table_header = self.main_widget.main_table.horizontalHeader()
+		self.main_widget_main_table = QtWidgets.QTableWidget(self)
+		self.main_widget_main_table.setColumnCount(3)
+		self.main_widget_main_table.setHorizontalHeaderLabels(["ID", "Source text", "Target text"])
+		#self.main_widget_main_table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+		self.main_widget_main_table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
+		self.main_widget_main_table.verticalHeader().setDefaultSectionSize(12)
+		#self.main_widget_main_table.verticalHeader().setDefaultAlignment(QtCore.Qt.AlignCenter)
+		
+		table_header = self.main_widget_main_table.horizontalHeader()
 		table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
 		table_header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
 		table_header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
-		self.main_widget.main_table.verticalHeader().hide()
-		self.main_widget.main_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-		self.main_widget.main_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-		self.main_widget.main_table.setFont(QtGui.QFont("Lucida Console"))
-		self.main_widget.main_table.setAlternatingRowColors(True)
-		self.main_widget.main_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-		self.main_widget.main_table.currentCellChanged.connect(self.main_table_currentCellChanged)
+		self.main_widget_main_table.verticalHeader().hide()
+		self.main_widget_main_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+		self.main_widget_main_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+		self.main_widget_main_table.setFont(QtGui.QFont("Lucida Console"))
+		self.main_widget_main_table.setAlternatingRowColors(True)
+		self.main_widget_main_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+		self.main_widget_main_table.currentCellChanged.connect(self.main_table_currentCellChanged)
 		
-		self.main_widget.main_table_layout.addWidget(self.main_widget.main_table)
+		self.main_widget_main_table_layout.addWidget(self.main_widget_main_table)
 		
 		#Current segment controls
-		self.main_widget.source_text = QtWidgets.QTextEdit(self)
-		self.main_widget.source_text.setFont(QtGui.QFont("Lucida Console"))
-		self.main_widget.source_text.setReadOnly(True)
-		self.main_widget.source_text.setTextInteractionFlags(self.main_widget.source_text.textInteractionFlags() | QtCore.Qt.TextSelectableByKeyboard)
-		self.main_widget.source_text.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-		self.main_widget.source_text.customContextMenuRequested.connect(self.build_source_context_menu)
-		source_text_highlighter = tags_highlighter(self.main_widget.source_text)
+		self.main_widget_source_text = QtWidgets.QTextEdit(self)
+		self.main_widget_source_text.setFont(QtGui.QFont("Lucida Console"))
+		self.main_widget_source_text.setReadOnly(True)
+		self.main_widget_source_text.setTextInteractionFlags(self.main_widget_source_text.textInteractionFlags() | QtCore.Qt.TextSelectableByKeyboard)
+		self.main_widget_source_text.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+		self.main_widget_source_text.customContextMenuRequested.connect(self.build_source_context_menu)
+		source_text_highlighter = tags_highlighter(self.main_widget_source_text)
 		
-		self.main_widget.target_text = QtWidgets.QTextEdit(self)
-		self.main_widget.target_text.setFont(QtGui.QFont("Lucida Console"))
-		self.main_widget.target_text.setAcceptRichText(False)
-		self.main_widget.target_text.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-		self.main_widget.target_text.customContextMenuRequested.connect(self.build_target_context_menu)
-		target_text_highlighter = tags_highlighter(self.main_widget.target_text)
+		self.main_widget_target_text = QtWidgets.QTextEdit(self)
+		self.main_widget_target_text.setFont(QtGui.QFont("Lucida Console"))
+		self.main_widget_target_text.setAcceptRichText(False)
+		self.main_widget_target_text.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+		self.main_widget_target_text.customContextMenuRequested.connect(self.build_target_context_menu)
+		self.main_widget_target_text.textChanged.connect(self.target_text_on_text_changed)
+		target_text_highlighter = tags_highlighter(self.main_widget_target_text)
 		#Testing dictionary
-		try:
-			target_text_highlighter.set_dictionary(enchant.Dict())
-		except Exception as e:
-			print( type(e).__name__ + ': ' + str(e))
+		#try:
+		#	target_text_highlighter.set_dictionary(enchant.Dict())
+		#except Exception as e:
+		#	print( type(e).__name__ + ': ' + str(e))
 
 		#Current segment groupbox
 		self.main_widget.current_segment_groupbox = QtWidgets.QGroupBox()
 		self.main_widget.current_segment_layout = QtWidgets.QVBoxLayout(self.main_widget.current_segment_groupbox)
-		self.main_widget.fuzzy_checkbox = QtWidgets.QCheckBox("Fuzzy translation.")
-		self.main_widget.current_segment_layout.addWidget(self.main_widget.fuzzy_checkbox)
+		self.main_widget_fuzzy_checkbox = QtWidgets.QCheckBox("Fuzzy translation.")
+		self.main_widget_fuzzy_checkbox.stateChanged.connect(self.fuzzy_checkbox_on_changed)
+		self.main_widget.current_segment_layout.addWidget(self.main_widget_fuzzy_checkbox)
 		
 		self.main_widget.current_segment_source_tab_widget = QtWidgets.QTabWidget()
 		self.main_widget.current_segment_layout.addWidget(self.main_widget.current_segment_source_tab_widget)
-		self.main_widget.current_segment_source_tab_widget.addTab(self.main_widget.source_text, "Original text")
+		self.main_widget.current_segment_source_tab_widget.addTab(self.main_widget_source_text, "Original text")
 		
-		self.main_widget.current_segment_target_tab_widget = QtWidgets.QTabWidget()
-		self.main_widget.current_segment_layout.addWidget(self.main_widget.current_segment_target_tab_widget)
-		self.main_widget.current_segment_target_tab_widget.addTab(self.main_widget.target_text, "Translated text")
+		self.main_widget_current_segment_target_tab_widget = QtWidgets.QTabWidget()
+		self.main_widget.current_segment_layout.addWidget(self.main_widget_current_segment_target_tab_widget)
+		self.main_widget_current_segment_target_tab_widget.addTab(self.main_widget_target_text, "Translated text")
 		
 		#Placing everything in their right positions
-		self.setCentralWidget(self.main_widget.main_table_groupbox)
+		self.setCentralWidget(self.main_widget_main_table_groupbox)
 		self.current_segment_dock = QtWidgets.QDockWidget("Current segment")
 		self.current_segment_dock.setObjectName("Current segment")
 		self.current_segment_dock.setWidget(self.main_widget.current_segment_groupbox)
@@ -261,13 +285,18 @@ class main_window(QtWidgets.QMainWindow):
 		self.list_of_loaded_plugin_widgets = []
 		self.plugin_docks_list = []
 		for plugin_widget in plugins.list_of_widgets:
-			new_widget = plugin_widget()
-			self.list_of_loaded_plugin_widgets.append(new_widget)
+			new_widget = plugin_widget[0]()
 			plugin_dock = QtWidgets.QDockWidget(new_widget.name)
 			plugin_dock.setObjectName(new_widget.name)
 			plugin_dock.setWidget(new_widget)
 			self.addDockWidget(QtCore.Qt.RightDockWidgetArea, plugin_dock)
 			self.plugin_docks_list.append(plugin_dock)
+
+			plugin_background_worker = plugin_widget[1]()
+			plugin_background_worker.finished.connect(new_widget.onFinish)
+			plugin_background_worker.moveToThread(self.db_thread)
+
+			self.list_of_loaded_plugin_widgets.append([new_widget, plugin_background_worker])
 		
 		#Load the settings
 		self.recent_files = []
@@ -286,7 +315,7 @@ class main_window(QtWidgets.QMainWindow):
 		except Exception as e:
 			#Load the defaults
 			self.resize(800,600)
-			#self.main_widget.main_table_v_splitter.setSizes([400, 200])
+			#self.main_widget_main_table_v_splitter.setSizes([400, 200])
 			print(e)
 		
 		self.menu_bar = self.menuBar()
@@ -309,23 +338,7 @@ class main_window(QtWidgets.QMainWindow):
 		next_segment_shortcut.activated.connect(self.go_to_next_segment)
 		insert_tag_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+T"), self)
 		insert_tag_shortcut.activated.connect(self.insert_next_tag)
-		
-		#Threads
-		self.db_thread = QtCore.QThread(self)
-		self.db_thread.start()
-		self.db_background_worker = db_op.db_worker()
-		self.db_background_worker.finished.connect(self.db_thread_on_finish)
-		self.db_background_worker.moveToThread(self.db_thread)
-		
-		self.files_thread = QtCore.QThread(self)
-		self.files_thread.start()
-		self.file_background_worker = import_files_worker()
-		self.file_background_worker.progress.connect(self.open_project_on_progress)
-		self.file_background_worker.status_update.connect(self.open_project_on_status_update)
-		self.file_background_worker.finished.connect(self.open_project_on_finish)
-		self.file_background_worker.finished_import.connect(self.open_project_on_finish_import)
-		self.file_background_worker.moveToThread(self.files_thread)
-	
+
 	def reset_globals(self):
 		self.filename = ''
 		self.project_path = ''
@@ -341,46 +354,50 @@ class main_window(QtWidgets.QMainWindow):
 		self.plurals = {}
 		self.max_plurals_in_file = 0
 		self.previous_source = {}
+		self.po_file = None
+		self.current_entry = None
+		self.plugin_workers = []
 	
 	def show_plural_controls(self, n):
-		plurals = []
-		plural_text_highlighters = []
-		for i in range(n):
-			plurals.append(QtWidgets.QTextEdit(self))
+		if self.main_widget_current_segment_target_tab_widget.count() != n+1:
+			plurals = []
+			plural_text_highlighters = []
+			for i in range(n):
+				plurals.append(QtWidgets.QTextEdit(self))
+				
+			for plural in plurals:
+				plural.setFont(QtGui.QFont("Lucida Console"))
+				plural.setAcceptRichText(False)
+				plural.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+				plural.customContextMenuRequested.connect(self.build_target_context_menu)
+				plural_text_highlighters.append(tags_highlighter(plural.document()))
 			
-		for plural in plurals:
-			plural.setFont(QtGui.QFont("Lucida Console"))
-			plural.setAcceptRichText(False)
-			plural.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-			plural.customContextMenuRequested.connect(self.build_target_context_menu)
-			plural_text_highlighters.append(tags_highlighter(plural.document()))
-		
-		for i in range(n):
-			self.main_widget.current_segment_target_tab_widget.addTab(plurals[i], "Plural [" + str(i+1) + "]")
+			for i in range(n):
+				self.main_widget_current_segment_target_tab_widget.addTab(plurals[i], "Plural [" + str(i+1) + "]")
 	
 	def hide_plural_controls(self):
-		for i in range(self.main_widget.current_segment_target_tab_widget.count() - 1):
-			self.main_widget.current_segment_target_tab_widget.removeTab(1)
+		for i in range(self.main_widget_current_segment_target_tab_widget.count() - 1):
+			self.main_widget_current_segment_target_tab_widget.removeTab(1)
 
 	def build_source_context_menu(self, pos):
-		self.main_widget.source_text.context_menu = self.main_widget.source_text.createStandardContextMenu()
-		self.main_widget.source_text.context_menu.addSeparator()
-		self.main_widget.source_text.context_menu.addAction("Google Search in Browser", lambda: webbrowser.open_new_tab('https://www.google.com/search?q=' + self.main_widget.source_text.textCursor().selectedText()))
-		self.main_widget.source_text.context_menu.addAction("All plugins lookup", lambda: self.trigger_plugins(source_text=self.main_widget.source_text.textCursor().selectedText()))
+		self.main_widget_source_text.context_menu = self.main_widget_source_text.createStandardContextMenu()
+		self.main_widget_source_text.context_menu.addSeparator()
+		self.main_widget_source_text.context_menu.addAction("Google Search in Browser", lambda: webbrowser.open_new_tab('https://www.google.com/search?q=' + self.main_widget_source_text.textCursor().selectedText()))
+		self.main_widget_source_text.context_menu.addAction("All plugins lookup", lambda: self.trigger_plugins(source_text=self.main_widget_source_text.textCursor().selectedText()))
 		#for plugin in self.list_of_loaded_plugin_widgets:
 		#		if hasattr(plugin, 'secondary_action'):
-		#		self.main_widget.source_text.context_menu.addAction(plugin.name, lambda name=plugin.name:self.secondary_action_trigger(name, self.main_widget.source_text.textCursor().selectedText()))
-		self.main_widget.source_text.context_menu.exec_(self.main_widget.source_text.viewport().mapToGlobal(pos))
+		#		self.main_widget_source_text.context_menu.addAction(plugin.name, lambda name=plugin.name:self.secondary_action_trigger(name, self.main_widget_source_text.textCursor().selectedText()))
+		self.main_widget_source_text.context_menu.exec_(self.main_widget_source_text.viewport().mapToGlobal(pos))
 		
 	def build_target_context_menu(self, pos):
-		self.main_widget.target_text.context_menu = self.main_widget.target_text.createStandardContextMenu()
-		self.main_widget.target_text.context_menu.addSeparator()
-		self.main_widget.target_text.context_menu.addAction("Google Search in Browser", lambda: webbrowser.open_new_tab('https://www.google.com/search?q=' + self.main_widget.target_text.textCursor().selectedText()))
-		self.main_widget.source_text.context_menu.addAction("All plugins lookup", lambda: self.trigger_plugins(source_text=self.main_widget.source_text.textCursor().selectedText()))
+		self.main_widget_target_text.context_menu = self.main_widget_target_text.createStandardContextMenu()
+		self.main_widget_target_text.context_menu.addSeparator()
+		self.main_widget_target_text.context_menu.addAction("Google Search in Browser", lambda: webbrowser.open_new_tab('https://www.google.com/search?q=' + self.main_widget_target_text.textCursor().selectedText()))
+		self.main_widget_source_text.context_menu.addAction("All plugins lookup", lambda: self.trigger_plugins(source_text=self.main_widget_source_text.textCursor().selectedText()))
 		#for plugin in self.list_of_loaded_plugin_widgets:
 		#	if hasattr(plugin, 'secondary_action'):
-		#		self.main_widget.target_text.context_menu.addAction(plugin.name, lambda name=plugin.name:self.secondary_action_trigger(name, self.main_widget.target_text.textCursor().selectedText()))
-		self.main_widget.target_text.context_menu.exec_(self.main_widget.target_text.viewport().mapToGlobal(pos))
+		#		self.main_widget_target_text.context_menu.addAction(plugin.name, lambda name=plugin.name:self.secondary_action_trigger(name, self.main_widget_target_text.textCursor().selectedText()))
+		self.main_widget_target_text.context_menu.exec_(self.main_widget_target_text.viewport().mapToGlobal(pos))
 	
 	def secondary_action_trigger(self, name, text):
 		for plugin in self.list_of_loaded_plugin_widgets:
@@ -389,25 +406,31 @@ class main_window(QtWidgets.QMainWindow):
 	
 	def build_menu(self, recent_files, is_project_open):
 		self.menu_bar.clear()
-		self.menu_file_new = QtWidgets.QAction(QtGui.QIcon('new.png'), '&New Project Directory', self)
-		self.menu_file_new.setShortcut('Ctrl+N')
-		self.menu_file_new.setStatusTip('Create a new project directory')
-		self.menu_file_new.triggered.connect(self.new_project)
+		#self.menu_file_new = QtWidgets.QAction(QtGui.QIcon('new.png'), '&New Project Directory', self)
+		#self.menu_file_new.setShortcut('Ctrl+N')
+		#self.menu_file_new.setStatusTip('Create a new project directory')
+		#self.menu_file_new.triggered.connect(self.new_project)
 		
-		self.menu_file_open = QtWidgets.QAction(QtGui.QIcon('open.png'), '&Open Project', self)
-		self.menu_file_open.setShortcut('Ctrl+O')
-		self.menu_file_open.setStatusTip('Open a project file')
-		self.menu_file_open.triggered.connect(lambda: self.open_project(False))
+		#self.menu_file_open = QtWidgets.QAction(QtGui.QIcon('open.png'), '&Open Project', self)
+		#self.menu_file_open.setShortcut('Ctrl+O')
+		#self.menu_file_open.setStatusTip('Open a project file')
+		#self.menu_file_open.triggered.connect(lambda: self.open_project(False))
 		
-		self.menu_file_save = QtWidgets.QAction('&Save Project', self)
+		self.menu_file_save = QtWidgets.QAction('&Save File', self)
 		self.menu_file_save.setShortcut('Ctrl+S')
-		self.menu_file_save.setStatusTip('Save current project')
+		self.menu_file_save.setStatusTip('Save current file')
 		self.menu_file_save.triggered.connect(self.save_current_file)
 		
-		self.menu_file_close = QtWidgets.QAction('Close Project', self)
-		self.menu_file_close.setShortcut('Ctrl+W')
-		self.menu_file_close.setStatusTip('Close current project')
-		self.menu_file_close.triggered.connect(self.close_current_project)
+		#self.menu_file_close = QtWidgets.QAction('Close Project', self)
+		#self.menu_file_close.setShortcut('Ctrl+W')
+		#self.menu_file_close.setStatusTip('Close current project')
+		#self.menu_file_close.triggered.connect(self.close_current_project)
+
+		#Rework: open .po file
+		self.menu_file_open = QtWidgets.QAction(QtGui.QIcon('open.png'), '&Open File', self)
+		self.menu_file_open.setShortcut('Ctrl+O')
+		self.menu_file_open.setStatusTip('Open a .po file')
+		self.menu_file_open.triggered.connect(self.open_po_file)
 		
 		self.menu_file_exit = QtWidgets.QAction(QtGui.QIcon('exit.png'), '&Exit', self)
 		self.menu_file_exit.setShortcut('Ctrl+Q')
@@ -436,10 +459,10 @@ class main_window(QtWidgets.QMainWindow):
 		
 		#File menu
 		self.menu_file = self.menu_bar.addMenu('&File')
-		self.menu_file.addAction(self.menu_file_new)
+		#self.menu_file.addAction(self.menu_file_new)
 		self.menu_file.addAction(self.menu_file_open)
 		self.menu_file.addAction(self.menu_file_save)
-		self.menu_file.addAction(self.menu_file_close)
+		#self.menu_file.addAction(self.menu_file_close)
 		self.menu_file.addSeparator()
 		if recent_files is not None:
 			for path in recent_files:
@@ -471,44 +494,142 @@ class main_window(QtWidgets.QMainWindow):
 			self.menu_file_close.setEnabled(True)
 			self.menu_project.setEnabled(True)
 		else:
-			self.menu_file_save.setEnabled(False)
-			self.menu_file_close.setEnabled(False)
+			#self.menu_file_save.setEnabled(False)
+			#self.menu_file_close.setEnabled(False)
 			self.menu_project.setEnabled(False)
 	
 	def go_to_next_segment(self):
-		max_row = self.main_widget.main_table.rowCount() - 1
+		max_row = self.main_widget_main_table.rowCount() - 1
 		if max_row >= 0:
-			current_row = self.main_widget.main_table.currentRow()
+			current_row = self.main_widget_main_table.currentRow()
 			if current_row >= 0 and current_row < max_row:
-				self.main_widget.main_table.setCurrentCell(current_row + 1, 0)
+				self.main_widget_main_table.setCurrentCell(current_row + 1, 0)
 			else:
-				self.main_widget.main_table.setCurrentCell(0, 0)
+				self.main_widget_main_table.setCurrentCell(0, 0)
 				
 	def insert_next_tag(self):
-		source_text = self.main_widget.source_text.toPlainText()
-		target_text = self.main_widget.target_text.toPlainText()
+		source_text = self.main_widget_source_text.toPlainText()
+		target_text = self.main_widget_target_text.toPlainText()
 		text = target_text
 		for match in re.findall('<[^\n]*?>', source_text):
 			parts = text.split(match, 1)
-			if (len(parts) == 1) and (source_text.count(match) > self.main_widget.target_text.toPlainText().count(match)):
-				self.main_widget.target_text.insertPlainText(match)
+			if (len(parts) == 1) and (source_text.count(match) > self.main_widget_target_text.toPlainText().count(match)):
+				self.main_widget_target_text.insertPlainText(match)
 				break
 			elif len(parts) == 2:
 				text = parts[1]
 	
 	def main_table_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
+		if previous_row >= 0:
+			pass
+			#Emit signal to save entry
+			#options = {}
+			#options['action'] = 'save_po_entry'
+			#options['po_file'] = self.po_file
+			#options['source_text'] = self.main_widget_source_text.toPlainText()
+			#options['target_text'] = self.main_widget_target_text.toPlainText()
+			#options['fuzzy_checked'] = self.main_widget_fuzzy_checkbox.isChecked()
+			#self.db_background_worker.start.emit(options)
+
+			#self.main_widget_main_table.item(previous_row, 2).setText(self.main_widget_target_text.toPlainText())
+
+			#if self.main_widget_fuzzy_checkbox.isChecked():
+			#	self.main_widget_main_table.item(previous_row, 0).setBackground(QtGui.QColor(255, 255, 0))
+			#else:
+			#	if options['target_text'] == '':
+			#		self.main_widget_main_table.item(previous_row, 0).setBackground(QtGui.QColor(255, 0, 0))
+			#	else:
+			#		self.main_widget_main_table.item(previous_row, 0).setBackground(QtGui.QColor(0, 255, 0))
+
+		if current_row >= 0:
+			current_source_text = self.main_widget_main_table.item(current_row, 1).text()
+			current_target_text = self.main_widget_main_table.item(current_row, 2).text()
+			self.current_entry = self.po_file.find(current_source_text)
+
+			self.main_widget_target_text.textChanged.disconnect()
+			self.main_widget_fuzzy_checkbox.stateChanged.disconnect()
+			self.main_widget_fuzzy_checkbox.setChecked(self.current_entry.fuzzy)
+			
+			#Show controls if we're working with plurals
+			if self.current_entry.msgid_plural == '':
+				self.hide_plural_controls()
+				self.main_widget_source_text.setPlainText(current_source_text)
+				self.main_widget_target_text.setPlainText(current_target_text)
+			else:
+				self.main_widget_source_text.setPlainText('')
+				self.main_widget_source_text.insertHtml('<font color="gray">Singular:</font><br>')
+				self.main_widget_source_text.insertPlainText(current_source_text)
+				self.main_widget_source_text.insertHtml('<br><br><font color="gray">Plural:</font><br>')
+				self.main_widget_source_text.insertPlainText(self.current_entry.msgid_plural)
+				
+				self.main_widget_target_text.setPlainText(self.current_entry.msgstr_plural[0])
+				self.show_plural_controls(len(self.current_entry.msgstr_plural) - 1)
+				for index, plural in self.current_entry.msgstr_plural.items():
+					if index > 0:
+						try:
+							self.main_widget_current_segment_target_tab_widget.widget(index).textChanged.disconnect()
+						except TypeError:
+							pass
+						self.main_widget_current_segment_target_tab_widget.widget(index).setPlainText(plural)
+						self.main_widget_current_segment_target_tab_widget.widget(index).textChanged.connect(self.target_text_on_text_changed)
+				self.main_widget_current_segment_target_tab_widget.setCurrentIndex(0)
+
+			#Connect widgets to their actions
+			self.main_widget_target_text.textChanged.connect(self.target_text_on_text_changed)
+			self.main_widget_fuzzy_checkbox.stateChanged.connect(self.fuzzy_checkbox_on_changed)
+
+			for widget in self.list_of_loaded_plugin_widgets:
+				if widget[0].running:
+					print('aborting' + widget[0].name)
+					widget[0].abort = True
+			self.trigger_plugins(self.main_widget_main_table.item(current_row, 0).text(), current_source_text, current_target_text)
+			#for widget in self.list_of_loaded_plugin_widgets:
+			#	widget[1].start.emit()
+
+	def target_text_on_text_changed(self):
+		current_row = self.main_widget_main_table.currentRow()
+		if current_row >= 0:
+			self.main_widget_main_table.item(current_row, 2).setText(self.main_widget_target_text.toPlainText())
+			if self.main_widget_current_segment_target_tab_widget.count() == 1:
+				self.current_entry.msgstr = self.main_widget_target_text.toPlainText()
+			elif self.main_widget_current_segment_target_tab_widget.count() > 1:
+				tab_index = self.main_widget_current_segment_target_tab_widget.currentIndex()
+				self.current_entry.msgstr_plural[tab_index] = self.main_widget_current_segment_target_tab_widget.widget(tab_index).toPlainText()
+		if self.main_widget_fuzzy_checkbox.isChecked():
+			self.main_widget_fuzzy_checkbox.setChecked(False)
+
+	def fuzzy_checkbox_on_changed(self):
+		current_row = self.main_widget_main_table.currentRow()
+		if current_row >= 0:
+			if self.main_widget_fuzzy_checkbox.isChecked():
+				if 'fuzzy' not in self.current_entry.flags:
+					self.current_entry.flags.append('fuzzy')
+				self.main_widget_main_table.item(current_row, 0).setBackground(QtGui.QColor(255, 255, 0))
+			else:
+				if 'fuzzy' in self.current_entry.flags:
+					self.current_entry.flags.remove('fuzzy')
+					if self.current_entry.previous_msgid != '':
+						self.current_entry.previous_msgid = ''
+					if self.current_entry.previous_msgid_plural != '':
+						self.current_entry.previous_msgid_plural = ''
+				if self.main_widget_target_text.toPlainText() == '':
+					self.main_widget_main_table.item(current_row, 0).setBackground(QtGui.QColor(255, 0, 0))
+				else:
+					self.main_widget_main_table.item(current_row, 0).setBackground(QtGui.QColor(0, 255, 0))
+
+	def old_main_table_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
 		#Check if we need to save the previous variant
 		save_variant = False
 		if previous_row >= 0:
-			if self.main_widget.target_text.toPlainText() != self.previous_translated_text:
+			if self.main_widget_target_text.toPlainText() != self.previous_translated_text:
 				save_variant = True
 
-			for i in range(self.main_widget.current_segment_target_tab_widget.count()):
+			for i in range(self.main_widget_current_segment_target_tab_widget.count()):
 				if i > 0:
-					if self.previous_plurals[i] != self.main_widget.current_segment_target_tab_widget.widget(i).toPlainText():
+					if self.previous_plurals[i] != self.main_widget_current_segment_target_tab_widget.widget(i).toPlainText():
 						save_variant = True
 			
-			if(self.main_widget.fuzzy_checkbox.isChecked()):
+			if(self.main_widget_fuzzy_checkbox.isChecked()):
 				previous_segment_new_fuzzy_status = True
 			else:
 				previous_segment_new_fuzzy_status = False
@@ -517,19 +638,19 @@ class main_window(QtWidgets.QMainWindow):
 				save_variant = True
 					
 		if save_variant:
-			self.main_widget.main_table.item(previous_row, 2).setText(self.main_widget.target_text.toPlainText())
-			if self.main_widget.fuzzy_checkbox.isChecked():
-				self.main_widget.main_table.item(previous_row, 0).setBackground(QtGui.QColor(255, 255, 0))
+			self.main_widget_main_table.item(previous_row, 2).setText(self.main_widget_target_text.toPlainText())
+			if self.main_widget_fuzzy_checkbox.isChecked():
+				self.main_widget_main_table.item(previous_row, 0).setBackground(QtGui.QColor(255, 255, 0))
 			else:
-				self.main_widget.main_table.item(previous_row, 0).setBackground(QtGui.QColor(0, 255, 0))
+				self.main_widget_main_table.item(previous_row, 0).setBackground(QtGui.QColor(0, 255, 0))
 				
 			options = {}
 			options['project_path'] = self.project_path
-			options['segment'] = self.main_widget.target_text.toPlainText()
+			options['segment'] = self.main_widget_target_text.toPlainText()
 			options['target_language'] = self.target_language
-			options['source_segment_id'] = self.main_widget.main_table.item(previous_row, 0).text()
+			options['source_segment_id'] = self.main_widget_main_table.item(previous_row, 0).text()
 			options['source_file'] = self.filename
-			options['fuzzy'] = self.main_widget.fuzzy_checkbox.isChecked()
+			options['fuzzy'] = self.main_widget_fuzzy_checkbox.isChecked()
 			options['plural_index'] = 0
 			options['action'] = 'save_variant'
 			
@@ -537,20 +658,20 @@ class main_window(QtWidgets.QMainWindow):
 			
 			if self.working_with_plurals:
 				plural_options = {}
-				for i in range(self.main_widget.current_segment_target_tab_widget.count()):
+				for i in range(self.main_widget_current_segment_target_tab_widget.count()):
 					if i > 0:
 						plural_options[i] = dict(options)
-						plural_options[i]['segment'] = self.main_widget.current_segment_target_tab_widget.widget(i).toPlainText()
+						plural_options[i]['segment'] = self.main_widget_current_segment_target_tab_widget.widget(i).toPlainText()
 						plural_options[i]['plural_index'] = i
 						
 						self.db_background_worker.start.emit(plural_options[i])
 						
-						self.plurals[self.main_widget.main_table.item(previous_row, 1).text(),i][0] = plural_options[i]['segment']
+						self.plurals[self.main_widget_main_table.item(previous_row, 1).text(),i][0] = plural_options[i]['segment']
 						
 		#Check if the row we moved to is valid
 		if current_row >= 0:
 			#Check if we're gonna work with plurals
-			current_source_text = self.main_widget.main_table.item(current_row, 1).text()
+			current_source_text = self.main_widget_main_table.item(current_row, 1).text()
 			if (current_source_text,1) in self.plurals:
 				self.working_with_plurals = True
 				plurals_count = 0
@@ -565,37 +686,37 @@ class main_window(QtWidgets.QMainWindow):
 			#Let's work on the current string
 			if current_row != previous_row:
 				if not self.working_with_plurals:
-					self.main_widget.source_text.setPlainText(current_source_text)
-					self.main_widget.target_text.setPlainText(self.main_widget.main_table.item(current_row, 2).text())
+					self.main_widget_source_text.setPlainText(current_source_text)
+					self.main_widget_target_text.setPlainText(self.main_widget_main_table.item(current_row, 2).text())
 				else:
-					#self.main_widget.source_text.setHtml('<font color="gray">Singular:</font><br>' + current_source_text + '<br><br><font color="gray">Plural:</font><br>' + self.plurals[current_source_text,1][2])
-					self.main_widget.source_text.insertHtml('<font color="gray">Singular:</font><br>')
-					self.main_widget.source_text.insertPlainText(current_source_text)
-					self.main_widget.source_text.insertHtml('<br><br><font color="gray">Plural:</font><br>')
-					self.main_widget.source_text.insertPlainText(self.plurals[current_source_text,1][2])
+					#self.main_widget_source_text.setHtml('<font color="gray">Singular:</font><br>' + current_source_text + '<br><br><font color="gray">Plural:</font><br>' + self.plurals[current_source_text,1][2])
+					self.main_widget_source_text.insertHtml('<font color="gray">Singular:</font><br>')
+					self.main_widget_source_text.insertPlainText(current_source_text)
+					self.main_widget_source_text.insertHtml('<br><br><font color="gray">Plural:</font><br>')
+					self.main_widget_source_text.insertPlainText(self.plurals[current_source_text,1][2])
 					
-					self.main_widget.target_text.setPlainText(self.main_widget.main_table.item(current_row, 2).text())
+					self.main_widget_target_text.setPlainText(self.main_widget_main_table.item(current_row, 2).text())
 					for i in range(plurals_count):
-						self.main_widget.current_segment_target_tab_widget.widget(i+1).setPlainText(self.plurals[current_source_text,i+1][0])
+						self.main_widget_current_segment_target_tab_widget.widget(i+1).setPlainText(self.plurals[current_source_text,i+1][0])
 						self.previous_plurals = {}
-						self.previous_plurals[i+1] = self.main_widget.current_segment_target_tab_widget.widget(i+1).toPlainText()
+						self.previous_plurals[i+1] = self.main_widget_current_segment_target_tab_widget.widget(i+1).toPlainText()
 				
-				self.previous_translated_text = self.main_widget.main_table.item(current_row, 2).text()
+				self.previous_translated_text = self.main_widget_main_table.item(current_row, 2).text()
 
-				current_segment_color = self.main_widget.main_table.item(current_row, 0).background().color()
+				current_segment_color = self.main_widget_main_table.item(current_row, 0).background().color()
 				if(current_segment_color == QtGui.QColor(255, 255, 0)):
-					self.main_widget.fuzzy_checkbox.setChecked(True)
+					self.main_widget_fuzzy_checkbox.setChecked(True)
 					self.previous_fuzzy_status = True
 				else:
-					self.main_widget.fuzzy_checkbox.setChecked(False)
+					self.main_widget_fuzzy_checkbox.setChecked(False)
 					self.previous_fuzzy_status = False
 				
 				#Get the plugins to work
-				self.trigger_plugins(self.main_widget.main_table.item(current_row, 0).text(), current_source_text, self.main_widget.target_text.toPlainText())
+				self.trigger_plugins(self.main_widget_main_table.item(current_row, 0).text(), current_source_text, self.main_widget_target_text.toPlainText())
 					
 				#Show previous source text in status bar
-				if self.main_widget.main_table.item(current_row, 0).text() in self.previous_source.keys():
-					self.status_label.setText("Old source text: " + repr(self.previous_source[self.main_widget.main_table.item(current_row, 0).text()]))
+				if self.main_widget_main_table.item(current_row, 0).text() in self.previous_source.keys():
+					self.status_label.setText("Old source text: " + repr(self.previous_source[self.main_widget_main_table.item(current_row, 0).text()]))
 				else:
 					self.status_label.setText("Ready.")
 
@@ -608,8 +729,10 @@ class main_window(QtWidgets.QMainWindow):
 		plugin_options['target_text'] = target_text
 		plugin_options['source_language'] = self.source_language
 		plugin_options['target_language'] = self.target_language
-		for plugin_widget in self.list_of_loaded_plugin_widgets:
-			plugin_widget.main_action(plugin_options)
+		#for plugin_widget in self.list_of_loaded_plugin_widgets:
+		#	plugin_widget.main_action(plugin_options)
+		for widget in self.list_of_loaded_plugin_widgets:
+			widget[1].start.emit(plugin_options)
 
 	def db_thread_on_finish(self, options):
 		if options['action'] == 'save_variant':
@@ -630,6 +753,55 @@ class main_window(QtWidgets.QMainWindow):
 			
 			self.open_project(os.path.join(creation_path, project_name, project_name + ".blc"))
 	
+	def open_po_file(self):
+		current_file = QtWidgets.QFileDialog.getOpenFileName(self, 'Open .po file', '', 'po files (*.po)')[0]
+
+		if not current_file:
+			return
+		else:
+			if os.path.isfile(current_file):
+				self.reset_globals()
+				self.po_file = polib.pofile(current_file, wrapwidth=0)
+
+				#Hack for translation memory
+				self.project_path = 'D:\global_tm.blc'
+				self.source_language = 'en'
+				self.target_language = self.po_file.metadata['Language']
+
+				self.main_widget.setEnabled(False)
+				self.status_label.setText("Loading file...")
+				self.main_widget_main_table.setRowCount(len(self.po_file))
+
+				for index, entry in enumerate(self.po_file):
+					row_id = QtWidgets.QTableWidgetItem(str(index + 1))
+					row_source = QtWidgets.QTableWidgetItem(entry.msgid)
+					row_target = QtWidgets.QTableWidgetItem(entry.msgstr)
+					if not entry.msgstr:
+						row_id.setBackground(QtGui.QColor(255, 0, 0))
+					else:
+						if(entry.fuzzy):
+							row_id.setBackground(QtGui.QColor(255, 255, 0))
+						else:
+							row_id.setBackground(QtGui.QColor(0, 255, 0))
+					self.main_widget_main_table.setItem(index, 0, row_id)
+					self.main_widget_main_table.setItem(index, 1, row_source)
+					self.main_widget_main_table.setItem(index, 2, row_target)
+	
+				self.filename = current_file
+				self.main_widget_main_table_groupbox.setTitle(current_file)
+				
+				self.main_widget.setEnabled(True)
+				self.status_label.setText("Ready.")
+				self.main_widget_target_text.setFocus()
+				
+				self.update_status_bar_file()
+			else:
+				error_message_box = QtWidgets.QMessageBox()
+				error_message_box.setText("File " + str(project_file_path) + " not found")
+				error_message_box.setIcon(QtWidgets.QMessageBox.Critical)
+				error_message_box.exec_()
+				return
+
 	def open_project(self, project_file_path):
 		if not project_file_path:
 			project_path = QtWidgets.QFileDialog.getOpenFileName(self, 'Open project', '', 'BlackCAT files (*.blc)')[0]
@@ -715,11 +887,15 @@ class main_window(QtWidgets.QMainWindow):
 		self.file_statistics_label.setText("File segments: " + str(file_translated_segments) + "/" + str(file_total_segments))
 	
 	def save_current_file(self):
-		#current_row = self.main_widget.main_table.currentRow()
-		#if current_row >= 0 and self.main_widget.target_text.toPlainText() != '':
-		#	db_op.save_variant(self, self.main_widget.target_text.toPlainText(), self.target_language, self.main_widget.main_table.item(current_row, 0).text(), self.filename)
-		#	self.main_widget.main_table.item(current_row, 2).setText(self.main_widget.target_text.toPlainText())
-		self.main_table_currentCellChanged(self.main_widget.main_table.currentRow(), 1,self.main_widget.main_table.currentRow(), 1 )
+		#current_row = self.main_widget_main_table.currentRow()
+		#if current_row >= 0 and self.main_widget_target_text.toPlainText() != '':
+		#	db_op.save_variant(self, self.main_widget_target_text.toPlainText(), self.target_language, self.main_widget_main_table.item(current_row, 0).text(), self.filename)
+		#	self.main_widget_main_table.item(current_row, 2).setText(self.main_widget_target_text.toPlainText())
+		
+		#self.main_table_currentCellChanged(self.main_widget_main_table.currentRow(), 1,self.main_widget_main_table.currentRow(), 1 )
+		self.po_file.metadata['X-Generator'] = 'BlackCAT 1.1'
+		self.po_file.metadata['PO-Revision-Date'] = strftime("%Y-%m-%d %H:%M%z", localtime())
+		self.po_file.save(newline='')
 			
 	def close_current_project(self):
 		#Save current file
@@ -727,9 +903,9 @@ class main_window(QtWidgets.QMainWindow):
 			self.save_current_file()
 	
 		#Clear the controls
-		self.main_widget.main_table.setRowCount(0)
-		self.main_widget.source_text.setText('')
-		self.main_widget.target_text.setText('')
+		self.main_widget_main_table.setRowCount(0)
+		self.main_widget_source_text.setText('')
+		self.main_widget_target_text.setText('')
 		#self.main_widget.main_h_splitter.setEnabled(False)
 		if self.recent_files is not None:
 			self.build_menu(list(dict.fromkeys(self.recent_files))[:10], False)
@@ -738,7 +914,7 @@ class main_window(QtWidgets.QMainWindow):
 		
 		self.reset_globals()
 		
-		self.main_widget.main_table_groupbox.setTitle("[No file]")
+		self.main_widget_main_table_groupbox.setTitle("[No file]")
 		self.setWindowTitle('BlackCAT')
 	
 	def call_file_picker(self):
@@ -782,9 +958,9 @@ class main_window(QtWidgets.QMainWindow):
 			self.status_label.setText("Openning file: " + filename)
 			
 			#Clear the controls
-			self.main_widget.main_table.setRowCount(0)
-			self.main_widget.source_text.setText('')
-			self.main_widget.target_text.setText('')
+			self.main_widget_main_table.setRowCount(0)
+			self.main_widget_source_text.setText('')
+			self.main_widget_target_text.setText('')
 			
 			options = {}
 			options['filename'] = filename
@@ -795,7 +971,7 @@ class main_window(QtWidgets.QMainWindow):
 			self.open_file_thread.start()	
 		
 	def open_file_onFinish(self, filename, result):
-		self.main_widget.main_table.setRowCount(len(result))
+		self.main_widget_main_table.setRowCount(len(result))
 		self.max_plurals_in_file = 0
 		plurals_offset = 0
 		# row [0]=id, [1]=source text, [2]=target text, [3]=fuzzy flag, [4]=plural index, [5]=plural form, [6]=previous source
@@ -813,9 +989,9 @@ class main_window(QtWidgets.QMainWindow):
 						row_id.setBackground(QtGui.QColor(0, 255, 0))
 				row_source.setTextAlignment(QtCore.Qt.AlignTop)
 				row_target.setTextAlignment(QtCore.Qt.AlignTop)
-				self.main_widget.main_table.setItem(index - plurals_offset, 0, row_id)
-				self.main_widget.main_table.setItem(index - plurals_offset, 1, row_source)
-				self.main_widget.main_table.setItem(index - plurals_offset, 2, row_target)
+				self.main_widget_main_table.setItem(index - plurals_offset, 0, row_id)
+				self.main_widget_main_table.setItem(index - plurals_offset, 1, row_source)
+				self.main_widget_main_table.setItem(index - plurals_offset, 2, row_target)
 				if row[6] is not None:
 					self.previous_source[str(row[0])] = row[6]
 				self.status_label.setText("Openning file: " + filename + " (loading segment " + str(index + 1) + " of " + str(len(result)) + ")" )
@@ -826,15 +1002,15 @@ class main_window(QtWidgets.QMainWindow):
 				self.plurals[row[1], row[4]] = [row[2], row[3], row[5]]
 				plurals_offset = plurals_offset + 1
 		
-		self.main_widget.main_table.setRowCount(len(result) - plurals_offset)
+		self.main_widget_main_table.setRowCount(len(result) - plurals_offset)
 	
 		self.filename = filename
 		self.previous_translated_text = ''
-		self.main_widget.main_table_groupbox.setTitle(filename)
+		self.main_widget_main_table_groupbox.setTitle(filename)
 		
 		self.main_widget.setEnabled(True)
 		self.status_label.setText("Ready.")
-		self.main_widget.target_text.setFocus()
+		self.main_widget_target_text.setFocus()
 		
 		self.update_status_bar_file()
 		
@@ -886,11 +1062,11 @@ class main_window(QtWidgets.QMainWindow):
 		info_box.exec_()
 		
 	def show_about_dialog(self):
-		about_text = "BlackCAT 1.0 (beta)\n\n"
+		about_text = "BlackCAT 1.1 (beta)\n\n"
 		about_text = about_text + "This is a work in progress.\n"
 		about_text = about_text + "That includes this about dialog.\n\n"
 		about_text = about_text + 'contact: carloswaldo@babelruins.org'
-		QtWidgets.QMessageBox.about(self, "About BlackCAT 1.0 (beta)", about_text)
+		QtWidgets.QMessageBox.about(self, "About BlackCAT 1.1 (beta)", about_text)
 		
 	def closeEvent(self, event):
 		#Let's save the current dimensions before closing

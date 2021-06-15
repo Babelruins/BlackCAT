@@ -12,29 +12,56 @@ class plugin_thread(QtCore.QThread):
 		self.finished.connect(finished_callback)
 		
 		self.aborted = False
+		self.tm_source_segments_cache = db_op.get_source_segments_from_translation_memory(self.options['project_file_path'])
 	
 	def run(self):
-		matching_segments = db_op.get_translation_memory(self.options['project_file_path'], self.options['segment_id'], self.options['source_language'], self.options['target_language'], self.options['source_text'], self.options['filename'], 50)
+		matching_segments = db_op.get_translation_memory(self.options['project_file_path'], self.tm_source_segments_cache, self.options['target_language'], self.options['source_text'], 70)
 		
+		#print(self.aborted)
 		if not self.aborted:
 			self.finished.emit(matching_segments)
+
+class main_worker(QtCore.QObject):
+	start = QtCore.pyqtSignal(object)
+	finished = QtCore.pyqtSignal(object)
+
+	def __init__(self):
+		super(main_worker, self).__init__()
+
+		self.tm_source_segments_cache = None
+		self.start.connect(self.run, QtCore.Qt.QueuedConnection)
+		self.mutex = QtCore.QMutex()
+
+	@QtCore.pyqtSlot(object)
+	def run(self, options):
+		self.mutex.lock()
+
+		if self.tm_source_segments_cache is None:
+			self.tm_source_segments_cache = db_op.get_source_segments_from_translation_memory(options['project_file_path'])
+
+		matching_segments = db_op.get_translation_memory(options['project_file_path'], self.tm_source_segments_cache, options['target_language'], options['source_text'], 50)
+
+		self.finished.emit(matching_segments)
+		self.mutex.unlock()
 
 class main_widget(QtWidgets.QWidget):
 	def __init__(self):
 		super(main_widget, self).__init__()
 
 		self.name = "Translation Memory"
+		self.running = False
+		self.abort = False
 		
 		main_layout = QtWidgets.QGridLayout(self)
 		
 		self.candidates_box = QtWidgets.QTableWidget(self)
-		self.candidates_box.setColumnCount(4)
-		self.candidates_box.setHorizontalHeaderLabels(["%", "Source text", "Target text", "File"])
+		self.candidates_box.setColumnCount(3)
+		self.candidates_box.setHorizontalHeaderLabels(["%", "Source text", "Target text"])
 		self.table_header = self.candidates_box.horizontalHeader()
 		self.table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
 		self.table_header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
 		self.table_header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
-		self.table_header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)
+		#self.table_header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)
 		self.candidates_box.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
 		self.candidates_box.verticalHeader().hide()
 		self.candidates_box.sortItems(0, QtCore.Qt.DescendingOrder)
@@ -54,10 +81,10 @@ class main_widget(QtWidgets.QWidget):
 		main_layout.addWidget(self.candidates_box, 0, 0)
 		main_layout.addLayout(status_layout, 1, 0)
 		
-		self.limit = 50
+		self.limit = 20
 	
 	def contextMenuEvent(self, pos):
-		self.target_text = self.parent().parent().main_widget.target_text
+		self.target_text = self.parent().parent().main_widget_target_text
 	
 		if self.candidates_box.currentRow() >= 0:
 			self.context_menu = QtWidgets.QMenu()
@@ -96,38 +123,50 @@ class main_widget(QtWidgets.QWidget):
 		self.plugin_thread.start()
 	
 	def onFinish(self, result):
+		self.running = True
 		self.candidates_box.setSortingEnabled(False)
+		if (result is None):
+			return
 		if len(result) >= self.limit:
 			total = self.limit
 		else:
 			total = len(result)
-		total_str = str(total)
+		#total_str = str(total)
 		self.candidates_box.setRowCount(total)
 		for index, row in enumerate(result):
+			if self.abort:
+				print('canceling tm')
+				break
+			#print(self.plugin_thread.aborted)
 			percent_widget = QtWidgets.QTableWidgetItem()
-			percent_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[4]))
-			if row[4] == 100:
+			percent_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[3]))
+			if row[3] == 100:
 				percent_widget.setBackground(QtGui.QColor(0, 255, 0))
 			else:
 				percent_widget.setBackground(QtGui.QColor(255, 255, 0))
 			self.candidates_box.setItem(index, 0, percent_widget)
 			
-			source_widget = QtWidgets.QTableWidgetItem()
-			source_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[1]))
+			source_widget = QtWidgets.QTableWidgetItem(row[1])
+			#source_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[1]))
 			self.candidates_box.setItem(index, 1, source_widget)
 			
-			target_widget = QtWidgets.QTableWidgetItem()
-			target_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[2]))
+			target_widget = QtWidgets.QTableWidgetItem(row[2])
+			#target_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[2]))
 			self.candidates_box.setItem(index, 2, target_widget)
 			
-			file_widget = QtWidgets.QTableWidgetItem()
-			file_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[3]))
-			self.candidates_box.setItem(index, 3, file_widget)
+			#file_widget = QtWidgets.QTableWidgetItem()
+			#file_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[3]))
+			#self.candidates_box.setItem(index, 3, file_widget)
 			
-			self.status_label.setText('Loading match ' + str(index + 1) + ' of ' + total_str + '.')
-			QtWidgets.QApplication.processEvents()
+			#self.status_label.setText('Loading match ' + str(index + 1) + ' of ' + total_str + '.')
+			#QtWidgets.QApplication.processEvents()
 			
 			if index + 1 >= self.limit:
 				break
 		self.candidates_box.setSortingEnabled(True)
 		self.status_label.setText('Ready.')
+		self.abort = False
+		self.running = False
+	
+	#def onFinish(self, row):
+
