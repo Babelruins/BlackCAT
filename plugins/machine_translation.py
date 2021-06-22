@@ -49,6 +49,7 @@ class plugin_thread(QtCore.QThread):
 
 class main_worker(QtCore.QObject):
 	start = QtCore.pyqtSignal(object)
+	interrupt = QtCore.pyqtSignal()
 	finished = QtCore.pyqtSignal(object)
 
 	def __init__(self):

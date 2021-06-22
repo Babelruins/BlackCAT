@@ -1,28 +1,11 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 from fuzzywuzzy import fuzz
 from core import db_op
-
-class plugin_thread(QtCore.QThread):
-	finished = QtCore.pyqtSignal(object)
-	
-	def __init__(self, options, finished_callback, parent=None):
-		QtCore.QThread.__init__(self, parent)
-		
-		self.options = options
-		self.finished.connect(finished_callback)
-		
-		self.aborted = False
-		self.tm_source_segments_cache = db_op.get_source_segments_from_translation_memory(self.options['project_file_path'])
-	
-	def run(self):
-		matching_segments = db_op.get_translation_memory(self.options['project_file_path'], self.tm_source_segments_cache, self.options['target_language'], self.options['source_text'], 70)
-		
-		#print(self.aborted)
-		if not self.aborted:
-			self.finished.emit(matching_segments)
+import html
 
 class main_worker(QtCore.QObject):
 	start = QtCore.pyqtSignal(object)
+	interrupt = QtCore.pyqtSignal()
 	finished = QtCore.pyqtSignal(object)
 
 	def __init__(self):
@@ -30,19 +13,61 @@ class main_worker(QtCore.QObject):
 
 		self.tm_source_segments_cache = None
 		self.start.connect(self.run, QtCore.Qt.QueuedConnection)
-		self.mutex = QtCore.QMutex()
+		self.interrupt.connect(self.stop)
+		
+		#self.mutex = QtCore.QMutex()
+		self.limit = 15
+		self.running = False
 
 	@QtCore.pyqtSlot(object)
 	def run(self, options):
-		self.mutex.lock()
+		#self.mutex.lock()
+		
+		self.running = True
+
+		suggestions_html = ''
 
 		if self.tm_source_segments_cache is None:
 			self.tm_source_segments_cache = db_op.get_source_segments_from_translation_memory(options['project_file_path'])
 
+		if not self.running:
+			print('canceling previous tm 1')
+			return
+
 		matching_segments = db_op.get_translation_memory(options['project_file_path'], self.tm_source_segments_cache, options['target_language'], options['source_text'], 50)
 
-		self.finished.emit(matching_segments)
-		self.mutex.unlock()
+		if not self.running:
+			print('canceling previous tm 2')
+			return
+		
+		if options['previous_text']:
+			if options['previous_text'] != '':
+					suggestions_html += '<font color="gray">Previous text:</font><br>'
+					suggestions_html += html.escape(options['previous_text'])
+					suggestions_html += '<hr>'
+
+		if len(matching_segments) >= self.limit:
+			total = self.limit
+		else:
+			total = len(matching_segments)
+
+		for index, row in enumerate(matching_segments):
+			suggestions_html += '<font color="gray">TM match (' + str(row[0]) + '%):</font><br>'
+			suggestions_html += html.escape(row[1])
+			suggestions_html += '<br><font color="gray">Translated text:</font><br>'
+			suggestions_html += html.escape(row[2])
+			suggestions_html += '<hr>'
+			if index + 1 >= self.limit:
+				break
+			if not self.running:
+				print('canceling previous tm 3')
+				return
+		self.finished.emit(suggestions_html)
+
+		#self.mutex.unlock()
+	
+	def stop(self):
+		self.running = False
 
 class main_widget(QtWidgets.QWidget):
 	def __init__(self):
@@ -53,35 +78,41 @@ class main_widget(QtWidgets.QWidget):
 		self.abort = False
 		
 		main_layout = QtWidgets.QGridLayout(self)
+
+		#New test
+		self.suggestions = QtWidgets.QTextEdit(self)
+		self.suggestions.setFont(QtGui.QFont("Lucida Console"))
+		self.suggestions.setReadOnly(True)
 		
-		self.candidates_box = QtWidgets.QTableWidget(self)
-		self.candidates_box.setColumnCount(3)
-		self.candidates_box.setHorizontalHeaderLabels(["%", "Source text", "Target text"])
-		self.table_header = self.candidates_box.horizontalHeader()
-		self.table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-		self.table_header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
-		self.table_header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
+		#self.candidates_box = QtWidgets.QTableWidget(self)
+		#self.candidates_box.setColumnCount(3)
+		#self.candidates_box.setHorizontalHeaderLabels(["%", "Source text", "Target text"])
+		#self.table_header = self.candidates_box.horizontalHeader()
+		#self.table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+		#self.table_header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+		#self.table_header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
 		#self.table_header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)
-		self.candidates_box.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
-		self.candidates_box.verticalHeader().hide()
-		self.candidates_box.sortItems(0, QtCore.Qt.DescendingOrder)
+		#self.candidates_box.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+		#self.candidates_box.verticalHeader().hide()
+		#self.candidates_box.sortItems(0, QtCore.Qt.DescendingOrder)
 		
-		self.candidates_box.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-		self.candidates_box.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-		self.candidates_box.setFont(QtGui.QFont("Lucida Console"))
-		self.candidates_box.setAlternatingRowColors(True)
+		#self.candidates_box.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+		#self.candidates_box.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+		#self.candidates_box.setFont(QtGui.QFont("Lucida Console"))
+		#self.candidates_box.setAlternatingRowColors(True)
 		
-		self.candidates_box.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-		self.candidates_box.customContextMenuRequested.connect(self.contextMenuEvent)
+		#self.candidates_box.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+		#self.candidates_box.customContextMenuRequested.connect(self.contextMenuEvent)
 		
 		status_layout = QtWidgets.QHBoxLayout()
 		self.status_label = QtWidgets.QLabel("Ready.")
 		status_layout.addWidget(self.status_label)
 		
-		main_layout.addWidget(self.candidates_box, 0, 0)
+		#main_layout.addWidget(self.candidates_box, 0, 0)
+		main_layout.addWidget(self.suggestions, 0, 0)
 		main_layout.addLayout(status_layout, 1, 0)
 		
-		self.limit = 20
+		#self.limit = 15
 	
 	def contextMenuEvent(self, pos):
 		self.target_text = self.parent().parent().main_widget_target_text
@@ -114,7 +145,7 @@ class main_widget(QtWidgets.QWidget):
 	def replace_source(self):
 		self.target_text.setText(self.candidates_box.item(self.candidates_box.currentRow(), 1).text())
 		
-	def main_action(self, options):
+	def old_main_action(self, options):
 		if hasattr(self, 'plugin_thread'):
 			self.plugin_thread.aborted = True
 			self.plugin_thread.quit()
@@ -122,9 +153,12 @@ class main_widget(QtWidgets.QWidget):
 		self.status_label.setText("Searching for fuzzy matches...")
 		self.plugin_thread.start()
 	
-	def onFinish(self, result):
-		self.running = True
-		self.candidates_box.setSortingEnabled(False)
+	def onFinish(self, html):
+		self.suggestions.setHtml(html)
+
+	def old_onFinish(self, result):
+		#self.running = True
+		#self.candidates_box.setSortingEnabled(False)
 		if (result is None):
 			return
 		if len(result) >= self.limit:
@@ -139,8 +173,8 @@ class main_widget(QtWidgets.QWidget):
 				break
 			#print(self.plugin_thread.aborted)
 			percent_widget = QtWidgets.QTableWidgetItem()
-			percent_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[3]))
-			if row[3] == 100:
+			percent_widget.setData(QtCore.Qt.EditRole, QtCore.QVariant(row[0]))
+			if row[0] == 100:
 				percent_widget.setBackground(QtGui.QColor(0, 255, 0))
 			else:
 				percent_widget.setBackground(QtGui.QColor(255, 255, 0))
@@ -163,10 +197,7 @@ class main_widget(QtWidgets.QWidget):
 			
 			if index + 1 >= self.limit:
 				break
-		self.candidates_box.setSortingEnabled(True)
+		#self.candidates_box.setSortingEnabled(True)
 		self.status_label.setText('Ready.')
-		self.abort = False
-		self.running = False
-	
-	#def onFinish(self, row):
-
+		#self.abort = False
+		#self.running = False

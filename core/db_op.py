@@ -239,8 +239,10 @@ def get_translation_memory(tm_path, source_segments, target_language, source_tex
 		list_of_arguments.append(target_language)
 		
 		for row in project_cursor.execute(query, list_of_arguments):
-			result.append(row + (matching_segments[row[0]], ))
+			result.append((matching_segments[row[0]], row[1], row[2]))
 	
+	result.sort(reverse=True)
+
 	return result
 	project_db.close()
 

@@ -1,5 +1,5 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
-import configparser, nltk.data, os, functools, webbrowser, re, enchant
+import configparser, nltk.data, os, functools, webbrowser, re
 from core import dialogs, db_op
 import text_processors, plugins
 from bs4 import BeautifulSoup
@@ -491,7 +491,7 @@ class main_window(QtWidgets.QMainWindow):
 			
 		if is_project_open:
 			self.menu_file_save.setEnabled(True)
-			self.menu_file_close.setEnabled(True)
+			#self.menu_file_close.setEnabled(True)
 			self.menu_project.setEnabled(True)
 		else:
 			#self.menu_file_save.setEnabled(False)
@@ -578,10 +578,12 @@ class main_window(QtWidgets.QMainWindow):
 			self.main_widget_target_text.textChanged.connect(self.target_text_on_text_changed)
 			self.main_widget_fuzzy_checkbox.stateChanged.connect(self.fuzzy_checkbox_on_changed)
 
-			for widget in self.list_of_loaded_plugin_widgets:
-				if widget[0].running:
-					print('aborting' + widget[0].name)
-					widget[0].abort = True
+			#for widget in self.list_of_loaded_plugin_widgets:
+			#	if widget[0].running:
+			#		print('aborting' + widget[0].name)
+			#		widget[0].abort = True
+
+			self.update_status_bar_file()
 			self.trigger_plugins(self.main_widget_main_table.item(current_row, 0).text(), current_source_text, current_target_text)
 			#for widget in self.list_of_loaded_plugin_widgets:
 			#	widget[1].start.emit()
@@ -729,9 +731,11 @@ class main_window(QtWidgets.QMainWindow):
 		plugin_options['target_text'] = target_text
 		plugin_options['source_language'] = self.source_language
 		plugin_options['target_language'] = self.target_language
+		plugin_options['previous_text'] = self.current_entry.previous_msgid
 		#for plugin_widget in self.list_of_loaded_plugin_widgets:
 		#	plugin_widget.main_action(plugin_options)
 		for widget in self.list_of_loaded_plugin_widgets:
+			widget[1].interrupt.emit()
 			widget[1].start.emit(plugin_options)
 
 	def db_thread_on_finish(self, options):
@@ -761,7 +765,7 @@ class main_window(QtWidgets.QMainWindow):
 		else:
 			if os.path.isfile(current_file):
 				self.reset_globals()
-				self.po_file = polib.pofile(current_file, wrapwidth=0)
+				self.po_file = polib.pofile(current_file, wrapwidth=-1)
 
 				#Hack for translation memory
 				self.project_path = 'D:\global_tm.blc'
@@ -771,18 +775,22 @@ class main_window(QtWidgets.QMainWindow):
 				self.main_widget.setEnabled(False)
 				self.status_label.setText("Loading file...")
 				self.main_widget_main_table.setRowCount(len(self.po_file))
+				self.main_widget_main_table.clearSelection()
 
 				for index, entry in enumerate(self.po_file):
 					row_id = QtWidgets.QTableWidgetItem(str(index + 1))
 					row_source = QtWidgets.QTableWidgetItem(entry.msgid)
 					row_target = QtWidgets.QTableWidgetItem(entry.msgstr)
-					if not entry.msgstr:
-						row_id.setBackground(QtGui.QColor(255, 0, 0))
+					if(entry.fuzzy):
+						row_id.setBackground(QtGui.QColor(255, 255, 0))
 					else:
-						if(entry.fuzzy):
-							row_id.setBackground(QtGui.QColor(255, 255, 0))
-						else:
+						if entry.msgstr:
 							row_id.setBackground(QtGui.QColor(0, 255, 0))
+						else:
+							if entry.msgid_plural and entry.msgstr_plural:
+								row_id.setBackground(QtGui.QColor(0, 255, 0))
+							else:
+								row_id.setBackground(QtGui.QColor(255, 0, 0))
 					self.main_widget_main_table.setItem(index, 0, row_id)
 					self.main_widget_main_table.setItem(index, 1, row_source)
 					self.main_widget_main_table.setItem(index, 2, row_target)
@@ -794,10 +802,15 @@ class main_window(QtWidgets.QMainWindow):
 				self.status_label.setText("Ready.")
 				self.main_widget_target_text.setFocus()
 				
+				#Save in recent files
+				self.recent_files.append(self.filename)
+				self.build_menu(list(dict.fromkeys(self.recent_files[::-1]))[:10], True)
+				self.setWindowTitle('BlackCAT - ' + str(self.filename))
+
 				self.update_status_bar_file()
 			else:
 				error_message_box = QtWidgets.QMessageBox()
-				error_message_box.setText("File " + str(project_file_path) + " not found")
+				error_message_box.setText("File " + str(current_file) + " not found")
 				error_message_box.setIcon(QtWidgets.QMessageBox.Critical)
 				error_message_box.exec_()
 				return
@@ -874,25 +887,20 @@ class main_window(QtWidgets.QMainWindow):
 		self.project_statistics_label.setText("Project segments: " + str(project_translated_segments) + "/" + str(project_total_segments))
 		
 	def update_status_bar_file(self):
-		options = {}
-		options['project_path'] = self.project_path
-		options['filename'] = self.filename
-		if hasattr(self, 'update_status_bar_file_thread'):
-			self.update_status_bar_file_thread.aborted = True
-			self.update_status_bar_file_thread.quit()
-		self.update_status_bar_file_thread = db_op.db_get_file_statistics(options, self.update_status_bar_file_onFinish, self)
-		self.update_status_bar_file_thread.start()
+		#options = {}
+		#options['project_path'] = self.project_path
+		#options['filename'] = self.filename
+		#if hasattr(self, 'update_status_bar_file_thread'):
+		#	self.update_status_bar_file_thread.aborted = True
+		#	self.update_status_bar_file_thread.quit()
+		#self.update_status_bar_file_thread = db_op.db_get_file_statistics(options, self.update_status_bar_file_onFinish, self)
+		#self.update_status_bar_file_thread.start()
+		self.file_statistics_label.setText("Entries: " + str(len(self.po_file.translated_entries())) + "/" + str(len(self.po_file)) + " (" + str(self.po_file.percent_translated()) + "%)")
 		
 	def update_status_bar_file_onFinish(self, file_translated_segments, file_total_segments):
 		self.file_statistics_label.setText("File segments: " + str(file_translated_segments) + "/" + str(file_total_segments))
 	
 	def save_current_file(self):
-		#current_row = self.main_widget_main_table.currentRow()
-		#if current_row >= 0 and self.main_widget_target_text.toPlainText() != '':
-		#	db_op.save_variant(self, self.main_widget_target_text.toPlainText(), self.target_language, self.main_widget_main_table.item(current_row, 0).text(), self.filename)
-		#	self.main_widget_main_table.item(current_row, 2).setText(self.main_widget_target_text.toPlainText())
-		
-		#self.main_table_currentCellChanged(self.main_widget_main_table.currentRow(), 1,self.main_widget_main_table.currentRow(), 1 )
 		self.po_file.metadata['X-Generator'] = 'BlackCAT 1.1'
 		self.po_file.metadata['PO-Revision-Date'] = strftime("%Y-%m-%d %H:%M%z", localtime())
 		self.po_file.save(newline='')
