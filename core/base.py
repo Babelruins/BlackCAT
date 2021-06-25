@@ -189,6 +189,11 @@ class main_window(QtWidgets.QMainWindow):
 	def __init__(self):
 		super(main_window, self).__init__()
 
+		#Colors
+		self.color_yellow = QtGui.QColor(255, 255, 0)
+		self.color_red = QtGui.QColor(255, 0, 0)
+		self.color_green = QtGui.QColor(0, 255, 0)
+
 		#Threads
 		self.db_thread = QtCore.QThread(self)
 		self.db_thread.start()
@@ -430,7 +435,7 @@ class main_window(QtWidgets.QMainWindow):
 		self.menu_file_open = QtWidgets.QAction(QtGui.QIcon('open.png'), '&Open File', self)
 		self.menu_file_open.setShortcut('Ctrl+O')
 		self.menu_file_open.setStatusTip('Open a .po file')
-		self.menu_file_open.triggered.connect(self.open_po_file)
+		self.menu_file_open.triggered.connect(functools.partial(self.open_po_file, None))
 		
 		self.menu_file_exit = QtWidgets.QAction(QtGui.QIcon('exit.png'), '&Exit', self)
 		self.menu_file_exit.setShortcut('Ctrl+Q')
@@ -467,7 +472,7 @@ class main_window(QtWidgets.QMainWindow):
 		if recent_files is not None:
 			for path in recent_files:
 				menu_recent_file = QtWidgets.QAction(path, self)
-				menu_recent_file.triggered.connect(functools.partial(self.open_project, path))
+				menu_recent_file.triggered.connect(functools.partial(self.open_po_file, path))
 				self.menu_file.addAction(menu_recent_file)
 		self.menu_file.addSeparator()
 		self.menu_file.addAction(self.menu_file_exit)
@@ -520,27 +525,6 @@ class main_window(QtWidgets.QMainWindow):
 				text = parts[1]
 	
 	def main_table_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
-		if previous_row >= 0:
-			pass
-			#Emit signal to save entry
-			#options = {}
-			#options['action'] = 'save_po_entry'
-			#options['po_file'] = self.po_file
-			#options['source_text'] = self.main_widget_source_text.toPlainText()
-			#options['target_text'] = self.main_widget_target_text.toPlainText()
-			#options['fuzzy_checked'] = self.main_widget_fuzzy_checkbox.isChecked()
-			#self.db_background_worker.start.emit(options)
-
-			#self.main_widget_main_table.item(previous_row, 2).setText(self.main_widget_target_text.toPlainText())
-
-			#if self.main_widget_fuzzy_checkbox.isChecked():
-			#	self.main_widget_main_table.item(previous_row, 0).setBackground(QtGui.QColor(255, 255, 0))
-			#else:
-			#	if options['target_text'] == '':
-			#		self.main_widget_main_table.item(previous_row, 0).setBackground(QtGui.QColor(255, 0, 0))
-			#	else:
-			#		self.main_widget_main_table.item(previous_row, 0).setBackground(QtGui.QColor(0, 255, 0))
-
 		if current_row >= 0:
 			current_source_text = self.main_widget_main_table.item(current_row, 1).text()
 			current_target_text = self.main_widget_main_table.item(current_row, 2).text()
@@ -599,6 +583,23 @@ class main_window(QtWidgets.QMainWindow):
 				self.current_entry.msgstr_plural[tab_index] = self.main_widget_current_segment_target_tab_widget.widget(tab_index).toPlainText()
 		if self.main_widget_fuzzy_checkbox.isChecked():
 			self.main_widget_fuzzy_checkbox.setChecked(False)
+		self.update_color()
+
+	def update_color(self):
+		current_row = self.main_widget_main_table.currentRow()
+		if current_row >= 0:
+			if self.main_widget_fuzzy_checkbox.isChecked():
+				self.main_widget_main_table.item(current_row, 0).setBackground(self.color_yellow)
+			else:
+				found_empty_plural = False
+				for i in range(self.main_widget_current_segment_target_tab_widget.count()):
+					if i > 0:
+						if self.main_widget_current_segment_target_tab_widget.widget(i).toPlainText() == '':
+							found_empty_plural = True
+				if self.main_widget_target_text.toPlainText() == '' or found_empty_plural:
+					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_red)
+				else:
+					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_green)
 
 	def fuzzy_checkbox_on_changed(self):
 		current_row = self.main_widget_main_table.currentRow()
@@ -606,7 +607,7 @@ class main_window(QtWidgets.QMainWindow):
 			if self.main_widget_fuzzy_checkbox.isChecked():
 				if 'fuzzy' not in self.current_entry.flags:
 					self.current_entry.flags.append('fuzzy')
-				self.main_widget_main_table.item(current_row, 0).setBackground(QtGui.QColor(255, 255, 0))
+				self.main_widget_main_table.item(current_row, 0).setBackground(self.color_yellow)
 			else:
 				if 'fuzzy' in self.current_entry.flags:
 					self.current_entry.flags.remove('fuzzy')
@@ -614,10 +615,15 @@ class main_window(QtWidgets.QMainWindow):
 						self.current_entry.previous_msgid = ''
 					if self.current_entry.previous_msgid_plural != '':
 						self.current_entry.previous_msgid_plural = ''
-				if self.main_widget_target_text.toPlainText() == '':
-					self.main_widget_main_table.item(current_row, 0).setBackground(QtGui.QColor(255, 0, 0))
+				found_empty_plural = False
+				for i in range(self.main_widget_current_segment_target_tab_widget.count()):
+					if i > 0:
+						if self.main_widget_current_segment_target_tab_widget.widget(i).toPlainText() == '':
+							found_empty_plural = True
+				if self.main_widget_target_text.toPlainText() == '' or found_empty_plural:
+					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_red)
 				else:
-					self.main_widget_main_table.item(current_row, 0).setBackground(QtGui.QColor(0, 255, 0))
+					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_green)
 
 	def old_main_table_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
 		#Check if we need to save the previous variant
@@ -757,8 +763,11 @@ class main_window(QtWidgets.QMainWindow):
 			
 			self.open_project(os.path.join(creation_path, project_name, project_name + ".blc"))
 	
-	def open_po_file(self):
-		current_file = QtWidgets.QFileDialog.getOpenFileName(self, 'Open .po file', '', 'po files (*.po)')[0]
+	def open_po_file(self, po_file):
+		if po_file is None:
+			current_file = QtWidgets.QFileDialog.getOpenFileName(self, 'Open .po file', '', 'po files (*.po)')[0]
+		else:
+			current_file = po_file
 
 		if not current_file:
 			return
@@ -782,15 +791,24 @@ class main_window(QtWidgets.QMainWindow):
 					row_source = QtWidgets.QTableWidgetItem(entry.msgid)
 					row_target = QtWidgets.QTableWidgetItem(entry.msgstr)
 					if(entry.fuzzy):
-						row_id.setBackground(QtGui.QColor(255, 255, 0))
+						row_id.setBackground(self.color_yellow)
 					else:
-						if entry.msgstr:
-							row_id.setBackground(QtGui.QColor(0, 255, 0))
+						if entry.msgid_plural:
+							#Si tiene plural, revisamos la lista de plurales por si alguno está vacío
+							found_empty_plural = False
+							for key in entry.msgstr_plural:
+								if entry.msgstr_plural[key] == '':
+									row_id.setBackground(self.color_red)
+									found_empty_plural = True
+									break
+							if not found_empty_plural:
+								row_id.setBackground(self.color_green)
 						else:
-							if entry.msgid_plural and entry.msgstr_plural:
-								row_id.setBackground(QtGui.QColor(0, 255, 0))
+							#Si no tiene plural, solo revisamos que exista msgstr
+							if entry.msgstr:
+								row_id.setBackground(self.color_green)
 							else:
-								row_id.setBackground(QtGui.QColor(255, 0, 0))
+								row_id.setBackground(self.color_red)
 					self.main_widget_main_table.setItem(index, 0, row_id)
 					self.main_widget_main_table.setItem(index, 1, row_source)
 					self.main_widget_main_table.setItem(index, 2, row_target)
