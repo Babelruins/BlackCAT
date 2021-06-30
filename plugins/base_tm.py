@@ -31,13 +31,11 @@ class main_worker(QtCore.QObject):
 			self.tm_source_segments_cache = db_op.get_source_segments_from_translation_memory(options['project_file_path'])
 
 		if not self.running:
-			print('canceling previous tm 1')
 			return
 
 		matching_segments = db_op.get_translation_memory(options['project_file_path'], self.tm_source_segments_cache, options['target_language'], options['source_text'], 50)
 
 		if not self.running:
-			print('canceling previous tm 2')
 			return
 		
 		if options['previous_text']:
@@ -60,7 +58,6 @@ class main_worker(QtCore.QObject):
 			if index + 1 >= self.limit:
 				break
 			if not self.running:
-				print('canceling previous tm 3')
 				return
 		self.finished.emit(suggestions_html)
 
@@ -144,14 +141,6 @@ class main_widget(QtWidgets.QWidget):
 		
 	def replace_source(self):
 		self.target_text.setText(self.candidates_box.item(self.candidates_box.currentRow(), 1).text())
-		
-	def old_main_action(self, options):
-		if hasattr(self, 'plugin_thread'):
-			self.plugin_thread.aborted = True
-			self.plugin_thread.quit()
-		self.plugin_thread = plugin_thread(options, self.onFinish, self)
-		self.status_label.setText("Searching for fuzzy matches...")
-		self.plugin_thread.start()
 	
 	def onFinish(self, html):
 		self.suggestions.setHtml(html)

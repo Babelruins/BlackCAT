@@ -6,6 +6,75 @@ from bs4 import BeautifulSoup
 from time import localtime, strftime
 import polib
 
+class LineNumberArea(QtWidgets.QWidget):
+	def __init__(self, textedit):
+		super().__init__(textedit)
+		self.textedit = textedit
+	
+	def sizeHint(self):
+		return QtCore.QSize(self.textedit.lineNumberAreaWidth(), 0)
+
+	def paintEvent(self, event):
+		self.textedit.lineNumberAreaPaintEvent(event)
+
+class TextEditWithLine(QtWidgets.QPlainTextEdit):
+	def __init__(self):
+		super().__init__()
+		self.lineNumberArea = LineNumberArea(self)
+
+		self.blockCountChanged.connect(self.updateLineNumberAreaWidth)
+		self.updateRequest.connect(self.updateLineNumberArea)
+
+		self.updateLineNumberAreaWidth(0)
+
+	def lineNumberAreaWidth(self):
+		digits = 1
+		count = max(1, self.blockCount())
+		while count >= 10:
+			count /= 10
+			digits += 1
+		space = 3 + self.fontMetrics().width('9') * digits
+		return space
+
+	def updateLineNumberAreaWidth(self, _):
+		self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
+
+	def updateLineNumberArea(self, rect, dy):
+		if dy:
+			self.lineNumberArea.scroll(0, dy)
+		else:
+			self.lineNumberArea.update(0, rect.y(), self.lineNumberArea.width(), rect.height())
+
+		if rect.contains(self.viewport().rect()):
+			self.updateLineNumberAreaWidth(0)
+
+	def resizeEvent(self, event):
+		super().resizeEvent(event)
+		cr = self.contentsRect()
+		self.lineNumberArea.setGeometry(QtCore.QRect(cr.left(), cr.top(), self.lineNumberAreaWidth(), cr.height()))
+
+	def lineNumberAreaPaintEvent(self, event):
+		mypainter = QtGui.QPainter(self.lineNumberArea)
+		mypainter.fillRect(event.rect(), QtCore.Qt.lightGray)
+		mypainter.setFont(QtGui.QFont("Lucida Console"))
+
+		block = self.firstVisibleBlock()
+		blockNumber = block.blockNumber()
+		top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
+		bottom = top + self.blockBoundingRect(block).height()
+
+		height = self.fontMetrics().height()
+		while block.isValid() and (top <= event.rect().bottom()):
+			if block.isVisible() and (bottom >= event.rect().top()):
+				number = str(blockNumber + 1)
+				mypainter.setPen(QtCore.Qt.black)
+				mypainter.drawText(0, top, self.lineNumberArea.width(), height, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter, number)
+
+			block = block.next()
+			top = bottom
+			bottom = top + self.blockBoundingRect(block).height()
+			blockNumber += 1
+
 class tags_highlighter(QtGui.QSyntaxHighlighter):
 	def __init__(self, parent=None):
 		super(tags_highlighter, self).__init__(parent)
@@ -15,13 +84,8 @@ class tags_highlighter(QtGui.QSyntaxHighlighter):
 		tag_regex = QtCore.QRegExp("<[^\n]*>")
 		tag_regex.setMinimal(True)
 		
-		newline_format = QtGui.QTextCharFormat()
-		newline_format.setBackground(QtCore.Qt.gray)
-		newline_regex = QtCore.QRegExp("\n")
-		
 		self.highlightingRules = []
 		self.highlightingRules.append((tag_regex, tag_format))
-		self.highlightingRules.append((newline_regex, newline_format))
 		
 		self.dict = None
 		self.spell_check_format = QtGui.QTextCharFormat()
@@ -47,9 +111,6 @@ class tags_highlighter(QtGui.QSyntaxHighlighter):
 				length = expression.matchedLength()
 				self.setFormat(index, length, format)
 				index = expression.indexIn(text, index + length)
-				
-		#Newlines
-		
 				
 class generate_translated_files_thread(QtCore.QThread):
 	progress = QtCore.pyqtSignal(object)
@@ -242,7 +303,8 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget_main_table_layout.addWidget(self.main_widget_main_table)
 		
 		#Current segment controls
-		self.main_widget_source_text = QtWidgets.QTextEdit(self)
+		#self.main_widget_source_text = QtWidgets.QTextEdit(self)
+		self.main_widget_source_text = TextEditWithLine()
 		self.main_widget_source_text.setFont(QtGui.QFont("Lucida Console"))
 		self.main_widget_source_text.setReadOnly(True)
 		self.main_widget_source_text.setTextInteractionFlags(self.main_widget_source_text.textInteractionFlags() | QtCore.Qt.TextSelectableByKeyboard)
@@ -250,9 +312,10 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget_source_text.customContextMenuRequested.connect(self.build_source_context_menu)
 		source_text_highlighter = tags_highlighter(self.main_widget_source_text)
 		
-		self.main_widget_target_text = QtWidgets.QTextEdit(self)
+		#self.main_widget_target_text = QtWidgets.QTextEdit(self)
+		self.main_widget_target_text = TextEditWithLine()
 		self.main_widget_target_text.setFont(QtGui.QFont("Lucida Console"))
-		self.main_widget_target_text.setAcceptRichText(False)
+		#self.main_widget_target_text.setAcceptRichText(False)
 		self.main_widget_target_text.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 		self.main_widget_target_text.customContextMenuRequested.connect(self.build_target_context_menu)
 		self.main_widget_target_text.textChanged.connect(self.target_text_on_text_changed)
@@ -368,11 +431,12 @@ class main_window(QtWidgets.QMainWindow):
 			plurals = []
 			plural_text_highlighters = []
 			for i in range(n):
-				plurals.append(QtWidgets.QTextEdit(self))
+				#plurals.append(QtWidgets.QTextEdit(self))
+				plurals.append(TextEditWithLine())
 				
 			for plural in plurals:
 				plural.setFont(QtGui.QFont("Lucida Console"))
-				plural.setAcceptRichText(False)
+				#plural.setAcceptRichText(False)
 				plural.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 				plural.customContextMenuRequested.connect(self.build_target_context_menu)
 				plural_text_highlighters.append(tags_highlighter(plural.document()))
@@ -398,7 +462,7 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget_target_text.context_menu = self.main_widget_target_text.createStandardContextMenu()
 		self.main_widget_target_text.context_menu.addSeparator()
 		self.main_widget_target_text.context_menu.addAction("Google Search in Browser", lambda: webbrowser.open_new_tab('https://www.google.com/search?q=' + self.main_widget_target_text.textCursor().selectedText()))
-		self.main_widget_source_text.context_menu.addAction("All plugins lookup", lambda: self.trigger_plugins(source_text=self.main_widget_source_text.textCursor().selectedText()))
+		self.main_widget_target_text.context_menu.addAction("All plugins lookup", lambda: self.trigger_plugins(source_text=self.main_widget_source_text.textCursor().selectedText()))
 		#for plugin in self.list_of_loaded_plugin_widgets:
 		#	if hasattr(plugin, 'secondary_action'):
 		#		self.main_widget_target_text.context_menu.addAction(plugin.name, lambda name=plugin.name:self.secondary_action_trigger(name, self.main_widget_target_text.textCursor().selectedText()))
@@ -541,10 +605,12 @@ class main_window(QtWidgets.QMainWindow):
 				self.main_widget_target_text.setPlainText(current_target_text)
 			else:
 				self.main_widget_source_text.setPlainText('')
-				self.main_widget_source_text.insertHtml('<font color="gray">Singular:</font><br>')
-				self.main_widget_source_text.insertPlainText(current_source_text)
-				self.main_widget_source_text.insertHtml('<br><br><font color="gray">Plural:</font><br>')
-				self.main_widget_source_text.insertPlainText(self.current_entry.msgid_plural)
+				self.main_widget_source_text.appendHtml('<font color="gray">Singular:</font>')
+				self.main_widget_source_text.appendPlainText(current_source_text)
+				self.main_widget_source_text.appendHtml('<font color="gray">Plural:</font>')
+				self.main_widget_source_text.appendPlainText(self.current_entry.msgid_plural)
+				sb = self.main_widget_source_text.verticalScrollBar()
+				sb.triggerAction(QtWidgets.QAbstractSlider.SliderAction.SliderToMinimum)
 				
 				self.main_widget_target_text.setPlainText(self.current_entry.msgstr_plural[0])
 				self.show_plural_controls(len(self.current_entry.msgstr_plural) - 1)
@@ -789,7 +855,10 @@ class main_window(QtWidgets.QMainWindow):
 				for index, entry in enumerate(self.po_file):
 					row_id = QtWidgets.QTableWidgetItem(str(index + 1))
 					row_source = QtWidgets.QTableWidgetItem(entry.msgid)
-					row_target = QtWidgets.QTableWidgetItem(entry.msgstr)
+					if entry.msgid_plural == '':
+						row_target = QtWidgets.QTableWidgetItem(entry.msgstr)
+					else:
+						row_target = QtWidgets.QTableWidgetItem(entry.msgstr_plural[0])
 					if(entry.fuzzy):
 						row_id.setBackground(self.color_yellow)
 					else:
@@ -913,7 +982,10 @@ class main_window(QtWidgets.QMainWindow):
 		#	self.update_status_bar_file_thread.quit()
 		#self.update_status_bar_file_thread = db_op.db_get_file_statistics(options, self.update_status_bar_file_onFinish, self)
 		#self.update_status_bar_file_thread.start()
-		self.file_statistics_label.setText("Entries: " + str(len(self.po_file.translated_entries())) + "/" + str(len(self.po_file)) + " (" + str(self.po_file.percent_translated()) + "%)")
+		translated_entries = len(self.po_file.translated_entries())
+		untranslated_entries = len(self.po_file.untranslated_entries())
+		total_entries = translated_entries + untranslated_entries
+		self.file_statistics_label.setText("Entries: " + str(translated_entries) + "/" + str(total_entries) + " (" + str(self.po_file.percent_translated()) + "%)")
 		
 	def update_status_bar_file_onFinish(self, file_translated_segments, file_total_segments):
 		self.file_statistics_label.setText("File segments: " + str(file_translated_segments) + "/" + str(file_total_segments))
