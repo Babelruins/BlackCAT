@@ -251,9 +251,14 @@ class main_window(QtWidgets.QMainWindow):
 		super(main_window, self).__init__()
 
 		#Colors
-		self.color_yellow = QtGui.QColor(255, 255, 0)
-		self.color_red = QtGui.QColor(255, 0, 0)
-		self.color_green = QtGui.QColor(0, 255, 0)
+		#self.color_yellow = QtGui.QColor(255, 255, 0)
+		#self.color_red = QtGui.QColor(255, 0, 0)
+		#self.color_green = QtGui.QColor(0, 255, 0)
+
+		#Images
+		self.check_icon = QtGui.QIcon('images/check_circle_black_24dp.svg')
+		self.error_icon = QtGui.QIcon('images/error_outline_black_24dp.svg')
+		self.warning_icon = QtGui.QIcon('images/help_outline_black_24dp.svg')
 
 		#Threads
 		self.db_thread = QtCore.QThread(self)
@@ -262,14 +267,14 @@ class main_window(QtWidgets.QMainWindow):
 		self.db_background_worker.finished.connect(self.db_thread_on_finish)
 		self.db_background_worker.moveToThread(self.db_thread)
 		
-		self.files_thread = QtCore.QThread(self)
-		self.files_thread.start()
-		self.file_background_worker = import_files_worker()
-		self.file_background_worker.progress.connect(self.open_project_on_progress)
-		self.file_background_worker.status_update.connect(self.open_project_on_status_update)
-		self.file_background_worker.finished.connect(self.open_project_on_finish)
-		self.file_background_worker.finished_import.connect(self.open_project_on_finish_import)
-		self.file_background_worker.moveToThread(self.files_thread)
+		#self.files_thread = QtCore.QThread(self)
+		#self.files_thread.start()
+		#self.file_background_worker = import_files_worker()
+		#self.file_background_worker.progress.connect(self.open_project_on_progress)
+		#self.file_background_worker.status_update.connect(self.open_project_on_status_update)
+		#self.file_background_worker.finished.connect(self.open_project_on_finish)
+		#self.file_background_worker.finished_import.connect(self.open_project_on_finish_import)
+		#self.file_background_worker.moveToThread(self.files_thread)
 		
 		self.reset_globals()
 		self.status_msgbox = None
@@ -282,17 +287,20 @@ class main_window(QtWidgets.QMainWindow):
 		
 		self.main_widget_main_table = QtWidgets.QTableWidget(self)
 		self.main_widget_main_table.setColumnCount(3)
-		self.main_widget_main_table.setHorizontalHeaderLabels(["ID", "Source text", "Target text"])
+		
 		#self.main_widget_main_table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
 		self.main_widget_main_table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
 		self.main_widget_main_table.verticalHeader().setDefaultSectionSize(12)
 		#self.main_widget_main_table.verticalHeader().setDefaultAlignment(QtCore.Qt.AlignCenter)
+		#self.main_widget_main_table.verticalHeader().hide()
 		
+		self.main_widget_main_table.setHorizontalHeaderLabels(["", "Source text", "Target text"])
 		table_header = self.main_widget_main_table.horizontalHeader()
+		
+		table_header.setMinimumSectionSize(6)
 		table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
 		table_header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
 		table_header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
-		self.main_widget_main_table.verticalHeader().hide()
 		self.main_widget_main_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
 		self.main_widget_main_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
 		self.main_widget_main_table.setFont(QtGui.QFont("Lucida Console"))
@@ -368,23 +376,14 @@ class main_window(QtWidgets.QMainWindow):
 		
 		#Load the settings
 		self.recent_files = []
-		try:
-			settings = QtCore.QSettings("Babelruins.org", "BlackCAT")
-			self.recent_files = settings.value('recent_files', [])
-			if self.recent_files is None:
-				self.recent_files = []
-			self.resize(settings.value('width', type=int), settings.value('height', type=int))
-			self.move(settings.value('x_position', type=int), settings.value('y_position', type=int))
-			if settings.value('maximized', type=bool):
-				self.setWindowState(QtCore.Qt.WindowMaximized)
-			#if settings.value('number_of_loaded_plugins') == len(self.list_of_loaded_plugin_widgets):
-			#	self.main_widget.plugins_v_splitter.restoreState(settings.value('plugins_splitter_settings'))
-			self.restoreState(settings.value('main_window_settings'))
-		except Exception as e:
-			#Load the defaults
-			self.resize(800,600)
-			#self.main_widget_main_table_v_splitter.setSizes([400, 200])
-			print(e)
+		self.settings = QtCore.QSettings("Babelruins.org", "BlackCAT")
+		self.resize(self.settings.value('size', QtCore.QSize(800, 600)))
+		self.move(self.settings.value('pos', QtCore.QPoint(50, 50)))
+		if self.settings.value('maximized', False, type=bool):
+			self.setWindowState(QtCore.Qt.WindowMaximized)
+		self.recent_files = self.settings.value('recent_files', [])
+		if self.settings.value('main_window_settings', False):
+			self.restoreState(self.settings.value('main_window_settings'))
 		
 		self.menu_bar = self.menuBar()
 		self.build_menu(self.recent_files, False)
@@ -406,6 +405,8 @@ class main_window(QtWidgets.QMainWindow):
 		next_segment_shortcut.activated.connect(self.go_to_next_segment)
 		insert_tag_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+T"), self)
 		insert_tag_shortcut.activated.connect(self.insert_next_tag)
+		next_untranslated_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Down"), self)
+		next_untranslated_shortcut.activated.connect(self.go_to_next_untranslated)
 
 	def reset_globals(self):
 		self.filename = ''
@@ -576,6 +577,16 @@ class main_window(QtWidgets.QMainWindow):
 			else:
 				self.main_widget_main_table.setCurrentCell(0, 0)
 				
+	def go_to_next_untranslated(self):
+		max_row = self.main_widget_main_table.rowCount() - 1
+		if max_row >= 0:
+			current_row = self.main_widget_main_table.currentRow()
+			if current_row >= 0 and current_row < max_row:
+				for i in range(current_row + 1, max_row + 1):
+					if self.main_widget_main_table.item(i, 0).background().color() in [QtCore.Qt.yellow, QtCore.Qt.red]:
+						self.main_widget_main_table.setCurrentCell(i, 0)
+						break
+
 	def insert_next_tag(self):
 		source_text = self.main_widget_source_text.toPlainText()
 		target_text = self.main_widget_target_text.toPlainText()
@@ -628,11 +639,6 @@ class main_window(QtWidgets.QMainWindow):
 			self.main_widget_target_text.textChanged.connect(self.target_text_on_text_changed)
 			self.main_widget_fuzzy_checkbox.stateChanged.connect(self.fuzzy_checkbox_on_changed)
 
-			#for widget in self.list_of_loaded_plugin_widgets:
-			#	if widget[0].running:
-			#		print('aborting' + widget[0].name)
-			#		widget[0].abort = True
-
 			self.update_status_bar_file()
 			self.trigger_plugins(self.main_widget_main_table.item(current_row, 0).text(), current_source_text, current_target_text)
 			#for widget in self.list_of_loaded_plugin_widgets:
@@ -655,6 +661,7 @@ class main_window(QtWidgets.QMainWindow):
 		current_row = self.main_widget_main_table.currentRow()
 		if current_row >= 0:
 			if self.main_widget_fuzzy_checkbox.isChecked():
+				self.main_widget_main_table.item(current_row, 0).setIcon(self.warning_icon)
 				self.main_widget_main_table.item(current_row, 0).setBackground(self.color_yellow)
 			else:
 				found_empty_plural = False
@@ -663,8 +670,10 @@ class main_window(QtWidgets.QMainWindow):
 						if self.main_widget_current_segment_target_tab_widget.widget(i).toPlainText() == '':
 							found_empty_plural = True
 				if self.main_widget_target_text.toPlainText() == '' or found_empty_plural:
+					self.main_widget_main_table.item(current_row, 0).setIcon(self.error_icon)
 					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_red)
 				else:
+					self.main_widget_main_table.item(current_row, 0).setIcon(self.check_icon)
 					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_green)
 
 	def fuzzy_checkbox_on_changed(self):
@@ -673,6 +682,7 @@ class main_window(QtWidgets.QMainWindow):
 			if self.main_widget_fuzzy_checkbox.isChecked():
 				if 'fuzzy' not in self.current_entry.flags:
 					self.current_entry.flags.append('fuzzy')
+				self.main_widget_main_table.item(current_row, 0).setIcon(self.warning_icon)
 				self.main_widget_main_table.item(current_row, 0).setBackground(self.color_yellow)
 			else:
 				if 'fuzzy' in self.current_entry.flags:
@@ -687,8 +697,10 @@ class main_window(QtWidgets.QMainWindow):
 						if self.main_widget_current_segment_target_tab_widget.widget(i).toPlainText() == '':
 							found_empty_plural = True
 				if self.main_widget_target_text.toPlainText() == '' or found_empty_plural:
+					self.main_widget_main_table.item(current_row, 0).setIcon(self.error_icon)
 					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_red)
 				else:
+					self.main_widget_main_table.item(current_row, 0).setIcon(self.check_icon)
 					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_green)
 
 	def old_main_table_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
@@ -841,6 +853,7 @@ class main_window(QtWidgets.QMainWindow):
 			if os.path.isfile(current_file):
 				self.reset_globals()
 				self.po_file = polib.pofile(current_file, wrapwidth=-1)
+				valid_entries = [e for e in self.po_file if not e.obsolete]
 
 				#Hack for translation memory
 				self.project_path = 'D:\global_tm.blc'
@@ -849,35 +862,42 @@ class main_window(QtWidgets.QMainWindow):
 
 				self.main_widget.setEnabled(False)
 				self.status_label.setText("Loading file...")
-				self.main_widget_main_table.setRowCount(len(self.po_file))
+				self.main_widget_main_table.setRowCount(len(valid_entries))
 				self.main_widget_main_table.clearSelection()
 
-				for index, entry in enumerate(self.po_file):
-					row_id = QtWidgets.QTableWidgetItem(str(index + 1))
+				for index, entry in enumerate(valid_entries):
+					#row_id = QtWidgets.QTableWidgetItem(str(index + 1))
+					row_id = QtWidgets.QTableWidgetItem()
+					row_id.setTextAlignment(QtCore.Qt.AlignCenter)
 					row_source = QtWidgets.QTableWidgetItem(entry.msgid)
 					if entry.msgid_plural == '':
 						row_target = QtWidgets.QTableWidgetItem(entry.msgstr)
 					else:
 						row_target = QtWidgets.QTableWidgetItem(entry.msgstr_plural[0])
 					if(entry.fuzzy):
-						row_id.setBackground(self.color_yellow)
+						row_id.setIcon(self.warning_icon)
+						row_id.setBackground(QtCore.Qt.yellow)
 					else:
 						if entry.msgid_plural:
 							#Si tiene plural, revisamos la lista de plurales por si alguno está vacío
 							found_empty_plural = False
 							for key in entry.msgstr_plural:
 								if entry.msgstr_plural[key] == '':
-									row_id.setBackground(self.color_red)
+									row_id.setIcon(self.error_icon)
+									row_id.setBackground(QtCore.Qt.red)
 									found_empty_plural = True
 									break
 							if not found_empty_plural:
-								row_id.setBackground(self.color_green)
+								row_id.setIcon(self.check_icon)
+								row_id.setBackground(QtCore.Qt.green)
 						else:
 							#Si no tiene plural, solo revisamos que exista msgstr
 							if entry.msgstr:
-								row_id.setBackground(self.color_green)
+								row_id.setIcon(self.check_icon)
+								row_id.setBackground(QtCore.Qt.green)
 							else:
-								row_id.setBackground(self.color_red)
+								row_id.setIcon(self.error_icon)
+								row_id.setBackground(QtCore.Qt.red)
 					self.main_widget_main_table.setItem(index, 0, row_id)
 					self.main_widget_main_table.setItem(index, 1, row_source)
 					self.main_widget_main_table.setItem(index, 2, row_target)
@@ -983,9 +1003,8 @@ class main_window(QtWidgets.QMainWindow):
 		#self.update_status_bar_file_thread = db_op.db_get_file_statistics(options, self.update_status_bar_file_onFinish, self)
 		#self.update_status_bar_file_thread.start()
 		translated_entries = len(self.po_file.translated_entries())
-		untranslated_entries = len(self.po_file.untranslated_entries())
-		total_entries = translated_entries + untranslated_entries
-		self.file_statistics_label.setText("Entries: " + str(translated_entries) + "/" + str(total_entries) + " (" + str(self.po_file.percent_translated()) + "%)")
+		valid_entries_count = sum(1 if not e.obsolete else 0 for e in self.po_file)
+		self.file_statistics_label.setText("Entries: " + str(translated_entries) + "/" + str(valid_entries_count) + " (" + str(self.po_file.percent_translated()) + "%)")
 		
 	def update_status_bar_file_onFinish(self, file_translated_segments, file_total_segments):
 		self.file_statistics_label.setText("File segments: " + str(file_translated_segments) + "/" + str(file_total_segments))
@@ -1166,20 +1185,33 @@ class main_window(QtWidgets.QMainWindow):
 		about_text = about_text + 'contact: carloswaldo@babelruins.org'
 		QtWidgets.QMessageBox.about(self, "About BlackCAT 1.1 (beta)", about_text)
 		
-	def closeEvent(self, event):
-		#Let's save the current dimensions before closing
-		settings = QtCore.QSettings("Babelruins.org", "BlackCAT")
-		settings.setValue('maximized', self.isMaximized())
-		settings.setValue('width', self.width())
-		settings.setValue('height', self.height())
-		settings.setValue('x_position', self.x())
-		settings.setValue('y_position', self.y())
-		settings.setValue('main_window_settings', self.saveState())
-		settings.setValue('number_of_loaded_plugins', len(self.list_of_loaded_plugin_widgets))
-		if self.recent_files is not None:
-			settings.setValue('recent_files', list(dict.fromkeys(self.recent_files[::-1]))[:10])
-		del settings
-		
-		#Save current file
+	def closeEvent(self, event):		
+		#Ask if save current file
+		do_exit = False
 		if self.filename:
-			self.save_current_file()
+			save_file_dialog = QtWidgets.QMessageBox.question(self, "Save file", "Do you want to save current file before closing?", QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel)
+			if save_file_dialog == QtWidgets.QMessageBox.Yes:
+				self.save_current_file()
+				do_exit = True
+			elif save_file_dialog == QtWidgets.QMessageBox.No:
+				do_exit = True
+			elif save_file_dialog == QtWidgets.QMessageBox.Cancel:
+				do_exit = False
+		else:
+			do_exit = True
+
+		if do_exit:
+			#Save settings
+			self.settings.setValue('size', self.size())
+			self.settings.setValue('pos', self.pos())
+			self.settings.setValue('maximized', self.isMaximized())
+			self.settings.setValue('main_window_settings', self.saveState())
+			if self.recent_files is not None:
+				self.settings.setValue('recent_files', list(dict.fromkeys(self.recent_files[::-1]))[:10])
+			#Stop threads
+			if self.db_thread.isRunning:
+				self.db_thread.exit()
+			#Exit
+			event.accept()
+		else:
+			event.ignore()
