@@ -9,7 +9,7 @@ if __name__ == '__main__':
 	
 	mw = base.main_window()
 	mw.setWindowTitle('BlackCAT')
-	mw.setWindowIcon(QtGui.QIcon('whitecat_256x256.png'))
+	mw.setWindowIcon(QtGui.QIcon('images/blackcat.png'))
 	mw.show()
 	
 	sys.exit(app.exec_())

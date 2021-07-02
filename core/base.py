@@ -250,11 +250,6 @@ class main_window(QtWidgets.QMainWindow):
 	def __init__(self):
 		super(main_window, self).__init__()
 
-		#Colors
-		#self.color_yellow = QtGui.QColor(255, 255, 0)
-		#self.color_red = QtGui.QColor(255, 0, 0)
-		#self.color_green = QtGui.QColor(0, 255, 0)
-
 		#Images
 		self.check_icon = QtGui.QIcon('images/check_circle_black_24dp.svg')
 		self.error_icon = QtGui.QIcon('images/error_outline_black_24dp.svg')
@@ -266,6 +261,11 @@ class main_window(QtWidgets.QMainWindow):
 		self.db_background_worker = db_op.db_worker()
 		self.db_background_worker.finished.connect(self.db_thread_on_finish)
 		self.db_background_worker.moveToThread(self.db_thread)
+
+		#Timers
+		self.currentCellChanged_timer = QtCore.QTimer()
+		self.currentCellChanged_timer.timeout.connect(self.main_table_currenteCellChanged_on_timer)
+		self.currentCellChanged_timer.setSingleShot(True)
 		
 		#self.files_thread = QtCore.QThread(self)
 		#self.files_thread.start()
@@ -288,11 +288,8 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget_main_table = QtWidgets.QTableWidget(self)
 		self.main_widget_main_table.setColumnCount(3)
 		
-		#self.main_widget_main_table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
 		self.main_widget_main_table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
 		self.main_widget_main_table.verticalHeader().setDefaultSectionSize(12)
-		#self.main_widget_main_table.verticalHeader().setDefaultAlignment(QtCore.Qt.AlignCenter)
-		#self.main_widget_main_table.verticalHeader().hide()
 		
 		self.main_widget_main_table.setHorizontalHeaderLabels(["", "Source text", "Target text"])
 		table_header = self.main_widget_main_table.horizontalHeader()
@@ -311,7 +308,6 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget_main_table_layout.addWidget(self.main_widget_main_table)
 		
 		#Current segment controls
-		#self.main_widget_source_text = QtWidgets.QTextEdit(self)
 		self.main_widget_source_text = TextEditWithLine()
 		self.main_widget_source_text.setFont(QtGui.QFont("Lucida Console"))
 		self.main_widget_source_text.setReadOnly(True)
@@ -320,10 +316,8 @@ class main_window(QtWidgets.QMainWindow):
 		self.main_widget_source_text.customContextMenuRequested.connect(self.build_source_context_menu)
 		source_text_highlighter = tags_highlighter(self.main_widget_source_text)
 		
-		#self.main_widget_target_text = QtWidgets.QTextEdit(self)
 		self.main_widget_target_text = TextEditWithLine()
 		self.main_widget_target_text.setFont(QtGui.QFont("Lucida Console"))
-		#self.main_widget_target_text.setAcceptRichText(False)
 		self.main_widget_target_text.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 		self.main_widget_target_text.customContextMenuRequested.connect(self.build_target_context_menu)
 		self.main_widget_target_text.textChanged.connect(self.target_text_on_text_changed)
@@ -335,8 +329,8 @@ class main_window(QtWidgets.QMainWindow):
 		#	print( type(e).__name__ + ': ' + str(e))
 
 		#Current segment groupbox
-		self.main_widget.current_segment_groupbox = QtWidgets.QGroupBox()
-		self.main_widget.current_segment_layout = QtWidgets.QVBoxLayout(self.main_widget.current_segment_groupbox)
+		self.main_widget_current_segment_groupbox = QtWidgets.QGroupBox()
+		self.main_widget.current_segment_layout = QtWidgets.QVBoxLayout(self.main_widget_current_segment_groupbox)
 		self.main_widget_fuzzy_checkbox = QtWidgets.QCheckBox("Fuzzy translation.")
 		self.main_widget_fuzzy_checkbox.stateChanged.connect(self.fuzzy_checkbox_on_changed)
 		self.main_widget.current_segment_layout.addWidget(self.main_widget_fuzzy_checkbox)
@@ -353,7 +347,7 @@ class main_window(QtWidgets.QMainWindow):
 		self.setCentralWidget(self.main_widget_main_table_groupbox)
 		self.current_segment_dock = QtWidgets.QDockWidget("Current segment")
 		self.current_segment_dock.setObjectName("Current segment")
-		self.current_segment_dock.setWidget(self.main_widget.current_segment_groupbox)
+		self.current_segment_dock.setWidget(self.main_widget_current_segment_groupbox)
 		self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.current_segment_dock)
 		self.setCorner(QtCore.Qt.BottomRightCorner, QtCore.Qt.RightDockWidgetArea)
 		
@@ -432,12 +426,10 @@ class main_window(QtWidgets.QMainWindow):
 			plurals = []
 			plural_text_highlighters = []
 			for i in range(n):
-				#plurals.append(QtWidgets.QTextEdit(self))
 				plurals.append(TextEditWithLine())
 				
 			for plural in plurals:
 				plural.setFont(QtGui.QFont("Lucida Console"))
-				#plural.setAcceptRichText(False)
 				plural.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 				plural.customContextMenuRequested.connect(self.build_target_context_menu)
 				plural_text_highlighters.append(tags_highlighter(plural.document()))
@@ -600,6 +592,13 @@ class main_window(QtWidgets.QMainWindow):
 				text = parts[1]
 	
 	def main_table_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
+		self.main_widget_current_segment_groupbox.setEnabled(False)
+		for widget in self.list_of_loaded_plugin_widgets:
+			widget[1].interrupt.emit()
+		self.currentCellChanged_timer.start(50)
+
+	def main_table_currenteCellChanged_on_timer(self):
+		current_row = self.main_widget_main_table.currentRow()
 		if current_row >= 0:
 			current_source_text = self.main_widget_main_table.item(current_row, 1).text()
 			current_target_text = self.main_widget_main_table.item(current_row, 2).text()
@@ -639,6 +638,8 @@ class main_window(QtWidgets.QMainWindow):
 			self.main_widget_target_text.textChanged.connect(self.target_text_on_text_changed)
 			self.main_widget_fuzzy_checkbox.stateChanged.connect(self.fuzzy_checkbox_on_changed)
 
+			self.main_widget_current_segment_groupbox.setEnabled(True)
+
 			self.update_status_bar_file()
 			self.trigger_plugins(self.main_widget_main_table.item(current_row, 0).text(), current_source_text, current_target_text)
 			#for widget in self.list_of_loaded_plugin_widgets:
@@ -662,7 +663,7 @@ class main_window(QtWidgets.QMainWindow):
 		if current_row >= 0:
 			if self.main_widget_fuzzy_checkbox.isChecked():
 				self.main_widget_main_table.item(current_row, 0).setIcon(self.warning_icon)
-				self.main_widget_main_table.item(current_row, 0).setBackground(self.color_yellow)
+				self.main_widget_main_table.item(current_row, 0).setBackground(QtCore.Qt.yellow)
 			else:
 				found_empty_plural = False
 				for i in range(self.main_widget_current_segment_target_tab_widget.count()):
@@ -671,10 +672,10 @@ class main_window(QtWidgets.QMainWindow):
 							found_empty_plural = True
 				if self.main_widget_target_text.toPlainText() == '' or found_empty_plural:
 					self.main_widget_main_table.item(current_row, 0).setIcon(self.error_icon)
-					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_red)
+					self.main_widget_main_table.item(current_row, 0).setBackground(QtCore.Qt.red)
 				else:
 					self.main_widget_main_table.item(current_row, 0).setIcon(self.check_icon)
-					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_green)
+					self.main_widget_main_table.item(current_row, 0).setBackground(QtCore.Qt.green)
 
 	def fuzzy_checkbox_on_changed(self):
 		current_row = self.main_widget_main_table.currentRow()
@@ -683,7 +684,7 @@ class main_window(QtWidgets.QMainWindow):
 				if 'fuzzy' not in self.current_entry.flags:
 					self.current_entry.flags.append('fuzzy')
 				self.main_widget_main_table.item(current_row, 0).setIcon(self.warning_icon)
-				self.main_widget_main_table.item(current_row, 0).setBackground(self.color_yellow)
+				self.main_widget_main_table.item(current_row, 0).setBackground(QtCore.Qt.yellow)
 			else:
 				if 'fuzzy' in self.current_entry.flags:
 					self.current_entry.flags.remove('fuzzy')
@@ -698,10 +699,10 @@ class main_window(QtWidgets.QMainWindow):
 							found_empty_plural = True
 				if self.main_widget_target_text.toPlainText() == '' or found_empty_plural:
 					self.main_widget_main_table.item(current_row, 0).setIcon(self.error_icon)
-					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_red)
+					self.main_widget_main_table.item(current_row, 0).setBackground(QtCore.Qt.red)
 				else:
 					self.main_widget_main_table.item(current_row, 0).setIcon(self.check_icon)
-					self.main_widget_main_table.item(current_row, 0).setBackground(self.color_green)
+					self.main_widget_main_table.item(current_row, 0).setBackground(QtCore.Qt.green)
 
 	def old_main_table_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
 		#Check if we need to save the previous variant
@@ -819,7 +820,7 @@ class main_window(QtWidgets.QMainWindow):
 		#for plugin_widget in self.list_of_loaded_plugin_widgets:
 		#	plugin_widget.main_action(plugin_options)
 		for widget in self.list_of_loaded_plugin_widgets:
-			widget[1].interrupt.emit()
+			#widget[1].interrupt.emit()
 			widget[1].start.emit(plugin_options)
 
 	def db_thread_on_finish(self, options):

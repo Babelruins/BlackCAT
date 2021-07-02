@@ -25,7 +25,7 @@ class main_worker(QtCore.QObject):
 		
 		self.running = True
 
-		suggestions_html = ''
+		suggestions_html = '<table border="0.5" cellspacing="0" cellpadding="2" width="100%" style="border-color:gray;">'
 
 		if self.tm_source_segments_cache is None:
 			self.tm_source_segments_cache = db_op.get_source_segments_from_translation_memory(options['project_file_path'])
@@ -40,9 +40,11 @@ class main_worker(QtCore.QObject):
 		
 		if options['previous_text']:
 			if options['previous_text'] != '':
-					suggestions_html += '<font color="gray">Previous text:</font><br>'
+					suggestions_html += '<tr>'
+					suggestions_html += '<td valign="middle"><img src="images/undo_white_24dp.svg"></td>'
+					suggestions_html += '<td><font color="gray">Previous text:</font><br>'
 					suggestions_html += html.escape(options['previous_text'])
-					suggestions_html += '<hr>'
+					suggestions_html += '</tr></td>'
 
 		if len(matching_segments) >= self.limit:
 			total = self.limit
@@ -50,15 +52,18 @@ class main_worker(QtCore.QObject):
 			total = len(matching_segments)
 
 		for index, row in enumerate(matching_segments):
-			suggestions_html += '<font color="gray">TM match (' + str(row[0]) + '%):</font><br>'
+			suggestions_html += '<tr>'
+			suggestions_html += '<td valign="middle"><img src="images/storage_white_24dp.svg"></td>'
+			suggestions_html += '<td><font color="gray">TM match (' + str(row[0]) + '%):</font><br>'
 			suggestions_html += html.escape(row[1])
 			suggestions_html += '<br><font color="gray">Translated text:</font><br>'
 			suggestions_html += html.escape(row[2])
-			suggestions_html += '<hr>'
+			suggestions_html += '</tr></td>'
 			if index + 1 >= self.limit:
 				break
 			if not self.running:
 				return
+		suggestions_html += '</table>'
 		self.finished.emit(suggestions_html)
 
 		#self.mutex.unlock()
@@ -80,12 +85,14 @@ class main_widget(QtWidgets.QWidget):
 		self.suggestions = QtWidgets.QTextEdit(self)
 		self.suggestions.setFont(QtGui.QFont("Lucida Console"))
 		self.suggestions.setReadOnly(True)
+		self.suggestions.setStyleSheet("QTextEdit { padding:0; }")
+		#self.suggestions.document().setDefaultStyleSheet('table { border-style: solid; border-color:red;}')
 		
 		#self.candidates_box = QtWidgets.QTableWidget(self)
-		#self.candidates_box.setColumnCount(3)
-		#self.candidates_box.setHorizontalHeaderLabels(["%", "Source text", "Target text"])
+		#self.candidates_box.setColumnCount(1)
+		#self.candidates_box.setHorizontalHeaderLabels(["Suggestions"])
 		#self.table_header = self.candidates_box.horizontalHeader()
-		#self.table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+		#self.table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
 		#self.table_header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
 		#self.table_header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
 		#self.table_header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)
@@ -144,6 +151,20 @@ class main_widget(QtWidgets.QWidget):
 	
 	def onFinish(self, html):
 		self.suggestions.setHtml(html)
+
+	def old3_onFinish(self, index, html):
+		if index == 0:
+			self.candidates_box.setRowCount(0)
+		self.candidates_box.insertRow(index)
+		#item = QtWidgets.QTextEdit()
+		#item.setHtml(html)
+		#item.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+		item = QtWidgets.QLabel(html)
+		item.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+		item.setFont(QtGui.QFont("Lucida Console"))
+		item.setWordWrap(True)
+		self.candidates_box.verticalHeader().setSectionResizeMode(index, QtWidgets.QHeaderView.ResizeToContents)
+		self.candidates_box.setCellWidget(index, 0, item)
 
 	def old_onFinish(self, result):
 		#self.running = True
