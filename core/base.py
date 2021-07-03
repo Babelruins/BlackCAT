@@ -277,7 +277,12 @@ class main_window(QtWidgets.QMainWindow):
 		#self.file_background_worker.moveToThread(self.files_thread)
 		
 		self.reset_globals()
-		self.status_msgbox = None
+
+		#Translation memory
+		#self.project_path = 'global_tm.blc'
+		self.source_language = 'en'
+
+		#self.status_msgbox = None
 		
 		self.main_widget = QtWidgets.QWidget(self)
 		
@@ -364,6 +369,7 @@ class main_window(QtWidgets.QMainWindow):
 
 			plugin_background_worker = plugin_widget[1]()
 			plugin_background_worker.finished.connect(new_widget.onFinish)
+			plugin_background_worker.import_tm_finish.connect(new_widget.import_tm_onFinish)
 			plugin_background_worker.moveToThread(self.db_thread)
 
 			self.list_of_loaded_plugin_widgets.append([new_widget, plugin_background_worker])
@@ -404,19 +410,19 @@ class main_window(QtWidgets.QMainWindow):
 
 	def reset_globals(self):
 		self.filename = ''
-		self.project_path = ''
-		self.project_dir = ''
-		self.valid_files = ''
+		#self.project_path = ''
+		#self.project_dir = ''
+		#self.valid_files = ''
 		self.source_language = ''
 		self.target_language = ''
-		self.previous_translated_text = ''
-		self.previous_plurals = {}
-		self.project_total_segments = 0
-		self.project_transtaled_segments = 0
-		self.working_with_plurals = False
-		self.plurals = {}
-		self.max_plurals_in_file = 0
-		self.previous_source = {}
+		#self.previous_translated_text = ''
+		#self.previous_plurals = {}
+		#self.project_total_segments = 0
+		#self.project_transtaled_segments = 0
+		#self.working_with_plurals = False
+		#self.plurals = {}
+		#self.max_plurals_in_file = 0
+		#self.previous_source = {}
 		self.po_file = None
 		self.current_entry = None
 		self.plugin_workers = []
@@ -468,15 +474,11 @@ class main_window(QtWidgets.QMainWindow):
 	
 	def build_menu(self, recent_files, is_project_open):
 		self.menu_bar.clear()
-		#self.menu_file_new = QtWidgets.QAction(QtGui.QIcon('new.png'), '&New Project Directory', self)
-		#self.menu_file_new.setShortcut('Ctrl+N')
-		#self.menu_file_new.setStatusTip('Create a new project directory')
-		#self.menu_file_new.triggered.connect(self.new_project)
-		
-		#self.menu_file_open = QtWidgets.QAction(QtGui.QIcon('open.png'), '&Open Project', self)
-		#self.menu_file_open.setShortcut('Ctrl+O')
-		#self.menu_file_open.setStatusTip('Open a project file')
-		#self.menu_file_open.triggered.connect(lambda: self.open_project(False))
+
+		self.menu_file_open = QtWidgets.QAction(QtGui.QIcon('open.png'), '&Open File', self)
+		self.menu_file_open.setShortcut('Ctrl+O')
+		self.menu_file_open.setStatusTip('Open a .po file')
+		self.menu_file_open.triggered.connect(functools.partial(self.open_po_file, None))
 		
 		self.menu_file_save = QtWidgets.QAction('&Save File', self)
 		self.menu_file_save.setShortcut('Ctrl+S')
@@ -488,31 +490,25 @@ class main_window(QtWidgets.QMainWindow):
 		#self.menu_file_close.setStatusTip('Close current project')
 		#self.menu_file_close.triggered.connect(self.close_current_project)
 
-		#Rework: open .po file
-		self.menu_file_open = QtWidgets.QAction(QtGui.QIcon('open.png'), '&Open File', self)
-		self.menu_file_open.setShortcut('Ctrl+O')
-		self.menu_file_open.setStatusTip('Open a .po file')
-		self.menu_file_open.triggered.connect(functools.partial(self.open_po_file, None))
-		
 		self.menu_file_exit = QtWidgets.QAction(QtGui.QIcon('exit.png'), '&Exit', self)
 		self.menu_file_exit.setShortcut('Ctrl+Q')
 		self.menu_file_exit.setStatusTip('Exit application')
 		self.menu_file_exit.triggered.connect(QtWidgets.qApp.quit)
 		
-		self.menu_project_project_files = QtWidgets.QAction('Project Files &List', self)
-		self.menu_project_project_files.setShortcut('Ctrl+L')
-		self.menu_project_project_files.setStatusTip('Show a list of the files in the current project')
-		self.menu_project_project_files.triggered.connect(self.call_file_picker)
+		#self.menu_project_project_files = QtWidgets.QAction('Project Files &List', self)
+		#self.menu_project_project_files.setShortcut('Ctrl+L')
+		#self.menu_project_project_files.setStatusTip('Show a list of the files in the current project')
+		#self.menu_project_project_files.triggered.connect(self.call_file_picker)
 		
 		self.menu_project_import_tm = QtWidgets.QAction('Import translation memory files', self)
 		self.menu_project_import_tm.setShortcut('Ctrl+I')
 		self.menu_project_import_tm.setStatusTip('Import files into the project translation memory')
 		self.menu_project_import_tm.triggered.connect(self.import_tm)
 			
-		self.menu_project_generate_translated_files = QtWidgets.QAction('&Generate translated files', self)
-		self.menu_project_generate_translated_files.setShortcut('Ctrl+G')
-		self.menu_project_generate_translated_files.setStatusTip('Generates translated files from the ones imported into the project')
-		self.menu_project_generate_translated_files.triggered.connect(self.generate_translated_files)
+		#self.menu_project_generate_translated_files = QtWidgets.QAction('&Generate translated files', self)
+		#self.menu_project_generate_translated_files.setShortcut('Ctrl+G')
+		#self.menu_project_generate_translated_files.setStatusTip('Generates translated files from the ones imported into the project')
+		#self.menu_project_generate_translated_files.triggered.connect(self.generate_translated_files)
 		
 		self.menu_help_about = QtWidgets.QAction('&About', self)
 		self.menu_help_about.setShortcut('Ctrl+A')
@@ -521,7 +517,6 @@ class main_window(QtWidgets.QMainWindow):
 		
 		#File menu
 		self.menu_file = self.menu_bar.addMenu('&File')
-		#self.menu_file.addAction(self.menu_file_new)
 		self.menu_file.addAction(self.menu_file_open)
 		self.menu_file.addAction(self.menu_file_save)
 		#self.menu_file.addAction(self.menu_file_close)
@@ -534,11 +529,10 @@ class main_window(QtWidgets.QMainWindow):
 		self.menu_file.addSeparator()
 		self.menu_file.addAction(self.menu_file_exit)
 		
-		#Project menu
-		self.menu_project = self.menu_bar.addMenu('&Project')
-		self.menu_project.addAction(self.menu_project_project_files)
+		#Translation Memory menu
+		self.menu_project = self.menu_bar.addMenu('&Traslation Memory')
 		self.menu_project.addAction(self.menu_project_import_tm)
-		self.menu_project.addAction(self.menu_project_generate_translated_files)
+		#self.menu_project.addAction(self.menu_project_generate_translated_files)
 		
 		#View menu
 		self.menu_view = self.menu_bar.addMenu('&View')
@@ -809,7 +803,7 @@ class main_window(QtWidgets.QMainWindow):
 
 	def trigger_plugins(self, segment_id=None, source_text=None, target_text=None):
 		plugin_options = {}
-		plugin_options['project_file_path'] = self.project_path
+		#plugin_options['project_file_path'] = self.project_path
 		plugin_options['filename'] = self.filename
 		plugin_options['segment_id'] = segment_id
 		plugin_options['source_text'] = source_text
@@ -856,9 +850,6 @@ class main_window(QtWidgets.QMainWindow):
 				self.po_file = polib.pofile(current_file, wrapwidth=-1)
 				valid_entries = [e for e in self.po_file if not e.obsolete]
 
-				#Hack for translation memory
-				self.project_path = 'D:\global_tm.blc'
-				self.source_language = 'en'
 				self.target_language = self.po_file.metadata['Language']
 
 				self.main_widget.setEnabled(False)
@@ -867,7 +858,6 @@ class main_window(QtWidgets.QMainWindow):
 				self.main_widget_main_table.clearSelection()
 
 				for index, entry in enumerate(valid_entries):
-					#row_id = QtWidgets.QTableWidgetItem(str(index + 1))
 					row_id = QtWidgets.QTableWidgetItem()
 					row_id.setTextAlignment(QtCore.Qt.AlignCenter)
 					row_source = QtWidgets.QTableWidgetItem(entry.msgid)
@@ -1161,23 +1151,14 @@ class main_window(QtWidgets.QMainWindow):
 		
 	def import_tm(self):
 		tm_file_name_list = QtWidgets.QFileDialog.getOpenFileNames(self, 'Import translation memory files', '', 'Any Supported File (*.tmx, *.po);;Translation Memory eXchange (*.tmx);;PO files (*.po)')[0]
-		import_options = {}
-		import_options['tm_file_name_list'] = tm_file_name_list
-		import_options['project_path'] = self.project_path
-		import_options['source_language'] = self.source_language
-		import_options['target_language'] = self.target_language
+		#import_options = {}
+		#import_options['tm_file_name_list'] = tm_file_name_list
+		#import_options['source_language'] = self.source_language
+		#import_options['target_language'] = self.target_language
 		
-		import_tm_thread = db_op.db_import_tm_thread(import_options, self.import_tm_onFinish, self)
-		import_tm_thread.start()
-			
-	def import_tm_onFinish(self, imported_files):
-		message = "Imported files: " + str(len(imported_files))
-		for file in imported_files:
-			message = message + "\n- " + file
-		info_box = QtWidgets.QMessageBox()
-		info_box.setText(message)
-		info_box.setIcon(QtWidgets.QMessageBox.Information)
-		info_box.exec_()
+		#import_tm_thread = db_op.db_import_tm_thread(import_options, self.import_tm_onFinish, self)
+		#import_tm_thread.start()
+		self.list_of_loaded_plugin_widgets[0][1].import_tm.emit(tm_file_name_list)
 		
 	def show_about_dialog(self):
 		about_text = "BlackCAT 1.1 (beta)\n\n"

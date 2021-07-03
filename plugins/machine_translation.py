@@ -51,6 +51,7 @@ class main_worker(QtCore.QObject):
 	start = QtCore.pyqtSignal(object)
 	interrupt = QtCore.pyqtSignal()
 	finished = QtCore.pyqtSignal(object)
+	import_tm_finish = QtCore.pyqtSignal(object)
 
 	def __init__(self):
 		super(main_worker, self).__init__()
@@ -132,3 +133,6 @@ class main_widget(QtWidgets.QWidget):
 			self.mt_table.setItem(1 , 1, QtWidgets.QTableWidgetItem(response))
 		elif provider == "yandex":
 			self.mt_table.setItem(2 , 1, QtWidgets.QTableWidgetItem(response))
+
+	def import_tm_onFinish(self, something):
+		pass
