@@ -37,7 +37,7 @@ def verify_tm(tm_path):
 	project_cursor = project_db.cursor()
 	try:
 		project_cursor.execute(""" SELECT variants.variant_id, variants.segment, variants.language, variants.source_segment,
-									source_segments.segment_id, source_segments.segment, source_segments.language, source_segments.source_file,
+									source_segments.segment_id, source_segments.segment, source_segments.language, source_segments.source_file
 								FROM variants
 								JOIN source_segments ON variants.source_segment = source_segments.segment_id
 								LIMIT 1;""")

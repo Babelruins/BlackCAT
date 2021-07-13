@@ -1,8 +1,8 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
-import configparser, nltk.data, os, functools, webbrowser, re
+import os, functools, webbrowser, re
 from core import dialogs, db_op
-import text_processors, plugins
-from bs4 import BeautifulSoup
+from plugins import base_tm
+import text_processors
 from time import localtime, strftime
 import polib
 
@@ -275,8 +275,6 @@ class main_window(QtWidgets.QMainWindow):
 		#self.file_background_worker.finished.connect(self.open_project_on_finish)
 		#self.file_background_worker.finished_import.connect(self.open_project_on_finish_import)
 		#self.file_background_worker.moveToThread(self.files_thread)
-		
-		self.reset_globals()
 
 		#Translation memory
 		#self.project_path = 'global_tm.blc'
@@ -355,24 +353,38 @@ class main_window(QtWidgets.QMainWindow):
 		self.current_segment_dock.setWidget(self.main_widget_current_segment_groupbox)
 		self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.current_segment_dock)
 		self.setCorner(QtCore.Qt.BottomRightCorner, QtCore.Qt.RightDockWidgetArea)
+
+		self.reset_globals()
 		
 		#load the plugins
-		self.list_of_loaded_plugin_widgets = []
+		#self.list_of_loaded_plugin_widgets = []
 		self.plugin_docks_list = []
-		for plugin_widget in plugins.list_of_widgets:
-			new_widget = plugin_widget[0]()
-			plugin_dock = QtWidgets.QDockWidget(new_widget.name)
-			plugin_dock.setObjectName(new_widget.name)
-			plugin_dock.setWidget(new_widget)
-			self.addDockWidget(QtCore.Qt.RightDockWidgetArea, plugin_dock)
-			self.plugin_docks_list.append(plugin_dock)
+		#for plugin_widget in plugins.list_of_widgets:
+		#	new_widget = plugin_widget[0]()
+		#	plugin_dock = QtWidgets.QDockWidget(new_widget.name)
+		#	plugin_dock.setObjectName(new_widget.name)
+		#	plugin_dock.setWidget(new_widget)
+		#	self.addDockWidget(QtCore.Qt.RightDockWidgetArea, plugin_dock)
+		#	self.plugin_docks_list.append(plugin_dock)
 
-			plugin_background_worker = plugin_widget[1]()
-			plugin_background_worker.finished.connect(new_widget.onFinish)
-			plugin_background_worker.import_tm_finish.connect(new_widget.import_tm_onFinish)
-			plugin_background_worker.moveToThread(self.db_thread)
+		#	plugin_background_worker = plugin_widget[1]()
+		#	plugin_background_worker.finished.connect(new_widget.onFinish)
+		#	plugin_background_worker.import_tm_finish.connect(new_widget.import_tm_onFinish)
+		#	plugin_background_worker.moveToThread(self.db_thread)
 
-			self.list_of_loaded_plugin_widgets.append([new_widget, plugin_background_worker])
+		#	self.list_of_loaded_plugin_widgets.append([new_widget, plugin_background_worker])
+
+		#Suggestions dock
+		self.suggestions_widget = base_tm.main_widget()
+		suggestions_dock = QtWidgets.QDockWidget(self.suggestions_widget.name)
+		suggestions_dock.setObjectName(self.suggestions_widget.name)
+		suggestions_dock.setWidget(self.suggestions_widget)
+		self.addDockWidget(QtCore.Qt.RightDockWidgetArea, suggestions_dock)
+		self.plugin_docks_list.append(suggestions_dock)
+		self.suggestions_background_worker = base_tm.main_worker()
+		self.suggestions_background_worker.finished.connect(self.suggestions_widget.onFinish)
+		self.suggestions_background_worker.import_tm_finish.connect(self.suggestions_widget.import_tm_onFinish)
+		self.suggestions_background_worker.moveToThread(self.db_thread)
 		
 		#Load the settings
 		self.recent_files = []
@@ -410,22 +422,21 @@ class main_window(QtWidgets.QMainWindow):
 
 	def reset_globals(self):
 		self.filename = ''
-		#self.project_path = ''
-		#self.project_dir = ''
-		#self.valid_files = ''
 		self.source_language = ''
 		self.target_language = ''
-		#self.previous_translated_text = ''
-		#self.previous_plurals = {}
-		#self.project_total_segments = 0
-		#self.project_transtaled_segments = 0
-		#self.working_with_plurals = False
-		#self.plurals = {}
-		#self.max_plurals_in_file = 0
-		#self.previous_source = {}
 		self.po_file = None
 		self.current_entry = None
-		self.plugin_workers = []
+		#self.plugin_workers = []
+
+		self.main_widget_target_text.textChanged.disconnect()
+		self.main_widget_fuzzy_checkbox.stateChanged.disconnect()
+		self.hide_plural_controls()
+		self.main_widget_source_text.setPlainText('')
+		self.main_widget_target_text.setPlainText('')
+		self.main_widget_fuzzy_checkbox.setChecked(False)
+		self.main_widget_target_text.textChanged.connect(self.target_text_on_text_changed)
+		self.main_widget_fuzzy_checkbox.stateChanged.connect(self.fuzzy_checkbox_on_changed)
+
 	
 	def show_plural_controls(self, n):
 		if self.main_widget_current_segment_target_tab_widget.count() != n+1:
@@ -475,35 +486,37 @@ class main_window(QtWidgets.QMainWindow):
 	def build_menu(self, recent_files, is_project_open):
 		self.menu_bar.clear()
 
-		self.menu_file_open = QtWidgets.QAction(QtGui.QIcon('open.png'), '&Open File', self)
+		self.menu_file_open = QtWidgets.QAction(QtGui.QIcon('open.png'), '&Open File ', self)
 		self.menu_file_open.setShortcut('Ctrl+O')
 		self.menu_file_open.setStatusTip('Open a .po file')
 		self.menu_file_open.triggered.connect(functools.partial(self.open_po_file, None))
 		
-		self.menu_file_save = QtWidgets.QAction('&Save File', self)
+		self.menu_file_save = QtWidgets.QAction('&Save File ', self)
 		self.menu_file_save.setShortcut('Ctrl+S')
 		self.menu_file_save.setStatusTip('Save current file')
 		self.menu_file_save.triggered.connect(self.save_current_file)
+		self.menu_file_save.setEnabled(False)
 		
-		#self.menu_file_close = QtWidgets.QAction('Close Project', self)
-		#self.menu_file_close.setShortcut('Ctrl+W')
-		#self.menu_file_close.setStatusTip('Close current project')
-		#self.menu_file_close.triggered.connect(self.close_current_project)
+		self.menu_file_close = QtWidgets.QAction('Close File ', self)
+		self.menu_file_close.setShortcut('Ctrl+W')
+		self.menu_file_close.setStatusTip('Close current file')
+		self.menu_file_close.triggered.connect(self.close_current_file)
+		self.menu_file_close.setEnabled(False)
 
 		self.menu_file_exit = QtWidgets.QAction(QtGui.QIcon('exit.png'), '&Exit', self)
 		self.menu_file_exit.setShortcut('Ctrl+Q')
 		self.menu_file_exit.setStatusTip('Exit application')
 		self.menu_file_exit.triggered.connect(QtWidgets.qApp.quit)
-		
-		#self.menu_project_project_files = QtWidgets.QAction('Project Files &List', self)
-		#self.menu_project_project_files.setShortcut('Ctrl+L')
-		#self.menu_project_project_files.setStatusTip('Show a list of the files in the current project')
-		#self.menu_project_project_files.triggered.connect(self.call_file_picker)
-		
-		self.menu_project_import_tm = QtWidgets.QAction('Import translation memory files', self)
-		self.menu_project_import_tm.setShortcut('Ctrl+I')
-		self.menu_project_import_tm.setStatusTip('Import files into the project translation memory')
-		self.menu_project_import_tm.triggered.connect(self.import_tm)
+
+		self.menu_edit_import_tm = QtWidgets.QAction('Import translation memory files', self)
+		self.menu_edit_import_tm.setShortcut('Ctrl+I')
+		self.menu_edit_import_tm.setStatusTip('Import files into the project translation memory')
+		self.menu_edit_import_tm.triggered.connect(self.import_tm)
+
+		self.menu_edit_settings = QtWidgets.QAction('S&ettings', self)
+		self.menu_edit_settings.setShortcut('Ctrl+E')
+		self.menu_edit_settings.setStatusTip('Edit general settings')
+		self.menu_edit_settings.triggered.connect(self.call_settings_dialog)
 			
 		#self.menu_project_generate_translated_files = QtWidgets.QAction('&Generate translated files', self)
 		#self.menu_project_generate_translated_files.setShortcut('Ctrl+G')
@@ -519,7 +532,7 @@ class main_window(QtWidgets.QMainWindow):
 		self.menu_file = self.menu_bar.addMenu('&File')
 		self.menu_file.addAction(self.menu_file_open)
 		self.menu_file.addAction(self.menu_file_save)
-		#self.menu_file.addAction(self.menu_file_close)
+		self.menu_file.addAction(self.menu_file_close)
 		self.menu_file.addSeparator()
 		if recent_files is not None:
 			for path in recent_files:
@@ -529,10 +542,10 @@ class main_window(QtWidgets.QMainWindow):
 		self.menu_file.addSeparator()
 		self.menu_file.addAction(self.menu_file_exit)
 		
-		#Translation Memory menu
-		self.menu_project = self.menu_bar.addMenu('&Traslation Memory')
-		self.menu_project.addAction(self.menu_project_import_tm)
-		#self.menu_project.addAction(self.menu_project_generate_translated_files)
+		#Edit menu
+		self.menu_project = self.menu_bar.addMenu('&Edit')
+		self.menu_project.addAction(self.menu_edit_import_tm)
+		self.menu_project.addAction(self.menu_edit_settings)
 		
 		#View menu
 		self.menu_view = self.menu_bar.addMenu('&View')
@@ -544,16 +557,11 @@ class main_window(QtWidgets.QMainWindow):
 		#Help menu
 		self.menu_help = self.menu_bar.addMenu('&Help')
 		self.menu_help.addAction(self.menu_help_about)
-			
-		if is_project_open:
-			self.menu_file_save.setEnabled(True)
-			#self.menu_file_close.setEnabled(True)
-			self.menu_project.setEnabled(True)
-		else:
-			#self.menu_file_save.setEnabled(False)
-			#self.menu_file_close.setEnabled(False)
-			self.menu_project.setEnabled(False)
 	
+	def call_settings_dialog(self):
+		self.import_files_box = dialogs.settings_dialog()
+		self.import_files_box.exec_()
+
 	def go_to_next_segment(self):
 		max_row = self.main_widget_main_table.rowCount() - 1
 		if max_row >= 0:
@@ -587,8 +595,9 @@ class main_window(QtWidgets.QMainWindow):
 	
 	def main_table_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
 		self.main_widget_current_segment_groupbox.setEnabled(False)
-		for widget in self.list_of_loaded_plugin_widgets:
-			widget[1].interrupt.emit()
+		#for widget in self.list_of_loaded_plugin_widgets:
+		#	widget[1].interrupt.emit()
+		self.suggestions_background_worker.interrupt.emit()
 		self.currentCellChanged_timer.start(50)
 
 	def main_table_currenteCellChanged_on_timer(self):
@@ -698,109 +707,6 @@ class main_window(QtWidgets.QMainWindow):
 					self.main_widget_main_table.item(current_row, 0).setIcon(self.check_icon)
 					self.main_widget_main_table.item(current_row, 0).setBackground(QtCore.Qt.green)
 
-	def old_main_table_currentCellChanged(self, current_row, current_column, previous_row, previous_column):
-		#Check if we need to save the previous variant
-		save_variant = False
-		if previous_row >= 0:
-			if self.main_widget_target_text.toPlainText() != self.previous_translated_text:
-				save_variant = True
-
-			for i in range(self.main_widget_current_segment_target_tab_widget.count()):
-				if i > 0:
-					if self.previous_plurals[i] != self.main_widget_current_segment_target_tab_widget.widget(i).toPlainText():
-						save_variant = True
-			
-			if(self.main_widget_fuzzy_checkbox.isChecked()):
-				previous_segment_new_fuzzy_status = True
-			else:
-				previous_segment_new_fuzzy_status = False
-				
-			if(self.previous_fuzzy_status != previous_segment_new_fuzzy_status):
-				save_variant = True
-					
-		if save_variant:
-			self.main_widget_main_table.item(previous_row, 2).setText(self.main_widget_target_text.toPlainText())
-			if self.main_widget_fuzzy_checkbox.isChecked():
-				self.main_widget_main_table.item(previous_row, 0).setBackground(QtGui.QColor(255, 255, 0))
-			else:
-				self.main_widget_main_table.item(previous_row, 0).setBackground(QtGui.QColor(0, 255, 0))
-				
-			options = {}
-			options['project_path'] = self.project_path
-			options['segment'] = self.main_widget_target_text.toPlainText()
-			options['target_language'] = self.target_language
-			options['source_segment_id'] = self.main_widget_main_table.item(previous_row, 0).text()
-			options['source_file'] = self.filename
-			options['fuzzy'] = self.main_widget_fuzzy_checkbox.isChecked()
-			options['plural_index'] = 0
-			options['action'] = 'save_variant'
-			
-			self.db_background_worker.start.emit(options)
-			
-			if self.working_with_plurals:
-				plural_options = {}
-				for i in range(self.main_widget_current_segment_target_tab_widget.count()):
-					if i > 0:
-						plural_options[i] = dict(options)
-						plural_options[i]['segment'] = self.main_widget_current_segment_target_tab_widget.widget(i).toPlainText()
-						plural_options[i]['plural_index'] = i
-						
-						self.db_background_worker.start.emit(plural_options[i])
-						
-						self.plurals[self.main_widget_main_table.item(previous_row, 1).text(),i][0] = plural_options[i]['segment']
-						
-		#Check if the row we moved to is valid
-		if current_row >= 0:
-			#Check if we're gonna work with plurals
-			current_source_text = self.main_widget_main_table.item(current_row, 1).text()
-			if (current_source_text,1) in self.plurals:
-				self.working_with_plurals = True
-				plurals_count = 0
-				for sentence, plural_index in self.plurals.keys():
-					if sentence == current_source_text:
-						plurals_count += 1
-				self.show_plural_controls(plurals_count)
-			else:
-				self.working_with_plurals = False
-				self.hide_plural_controls()
-			
-			#Let's work on the current string
-			if current_row != previous_row:
-				if not self.working_with_plurals:
-					self.main_widget_source_text.setPlainText(current_source_text)
-					self.main_widget_target_text.setPlainText(self.main_widget_main_table.item(current_row, 2).text())
-				else:
-					#self.main_widget_source_text.setHtml('<font color="gray">Singular:</font><br>' + current_source_text + '<br><br><font color="gray">Plural:</font><br>' + self.plurals[current_source_text,1][2])
-					self.main_widget_source_text.insertHtml('<font color="gray">Singular:</font><br>')
-					self.main_widget_source_text.insertPlainText(current_source_text)
-					self.main_widget_source_text.insertHtml('<br><br><font color="gray">Plural:</font><br>')
-					self.main_widget_source_text.insertPlainText(self.plurals[current_source_text,1][2])
-					
-					self.main_widget_target_text.setPlainText(self.main_widget_main_table.item(current_row, 2).text())
-					for i in range(plurals_count):
-						self.main_widget_current_segment_target_tab_widget.widget(i+1).setPlainText(self.plurals[current_source_text,i+1][0])
-						self.previous_plurals = {}
-						self.previous_plurals[i+1] = self.main_widget_current_segment_target_tab_widget.widget(i+1).toPlainText()
-				
-				self.previous_translated_text = self.main_widget_main_table.item(current_row, 2).text()
-
-				current_segment_color = self.main_widget_main_table.item(current_row, 0).background().color()
-				if(current_segment_color == QtGui.QColor(255, 255, 0)):
-					self.main_widget_fuzzy_checkbox.setChecked(True)
-					self.previous_fuzzy_status = True
-				else:
-					self.main_widget_fuzzy_checkbox.setChecked(False)
-					self.previous_fuzzy_status = False
-				
-				#Get the plugins to work
-				self.trigger_plugins(self.main_widget_main_table.item(current_row, 0).text(), current_source_text, self.main_widget_target_text.toPlainText())
-					
-				#Show previous source text in status bar
-				if self.main_widget_main_table.item(current_row, 0).text() in self.previous_source.keys():
-					self.status_label.setText("Old source text: " + repr(self.previous_source[self.main_widget_main_table.item(current_row, 0).text()]))
-				else:
-					self.status_label.setText("Ready.")
-
 	def trigger_plugins(self, segment_id=None, source_text=None, target_text=None):
 		plugin_options = {}
 		#plugin_options['project_file_path'] = self.project_path
@@ -811,11 +717,12 @@ class main_window(QtWidgets.QMainWindow):
 		plugin_options['source_language'] = self.source_language
 		plugin_options['target_language'] = self.target_language
 		plugin_options['previous_text'] = self.current_entry.previous_msgid
+		plugin_options['context'] = self.current_entry.occurrences
 		#for plugin_widget in self.list_of_loaded_plugin_widgets:
 		#	plugin_widget.main_action(plugin_options)
-		for widget in self.list_of_loaded_plugin_widgets:
-			#widget[1].interrupt.emit()
-			widget[1].start.emit(plugin_options)
+		#for widget in self.list_of_loaded_plugin_widgets:
+		#	widget[1].start.emit(plugin_options)
+		self.suggestions_background_worker.start.emit(plugin_options)
 
 	def db_thread_on_finish(self, options):
 		if options['action'] == 'save_variant':
@@ -896,7 +803,10 @@ class main_window(QtWidgets.QMainWindow):
 				self.filename = current_file
 				self.main_widget_main_table_groupbox.setTitle(current_file)
 				
+				#Enable widgets
 				self.main_widget.setEnabled(True)
+				self.main_widget_main_table.setCurrentCell(0, 0)
+
 				self.status_label.setText("Ready.")
 				self.main_widget_target_text.setFocus()
 				
@@ -904,6 +814,10 @@ class main_window(QtWidgets.QMainWindow):
 				self.recent_files.append(self.filename)
 				self.build_menu(list(dict.fromkeys(self.recent_files[::-1]))[:10], True)
 				self.setWindowTitle('BlackCAT - ' + str(self.filename))
+
+				#Enable menu items
+				self.menu_file_save.setEnabled(True)
+				self.menu_file_close.setEnabled(True)
 
 				self.update_status_bar_file()
 			else:
@@ -1005,25 +919,23 @@ class main_window(QtWidgets.QMainWindow):
 		self.po_file.metadata['PO-Revision-Date'] = strftime("%Y-%m-%d %H:%M%z", localtime())
 		self.po_file.save(newline='')
 			
-	def close_current_project(self):
-		#Save current file
-		if self.filename:
-			self.save_current_file()
-	
-		#Clear the controls
-		self.main_widget_main_table.setRowCount(0)
-		self.main_widget_source_text.setText('')
-		self.main_widget_target_text.setText('')
-		#self.main_widget.main_h_splitter.setEnabled(False)
-		if self.recent_files is not None:
-			self.build_menu(list(dict.fromkeys(self.recent_files))[:10], False)
-		else:
-			self.build_menu(None, False)
-		
-		self.reset_globals()
-		
-		self.main_widget_main_table_groupbox.setTitle("[No file]")
-		self.setWindowTitle('BlackCAT')
+	def close_current_file(self):
+		#Ask if save before closing
+		if self.do_close():
+			#Clear the controls
+			self.main_widget_main_table.setRowCount(0)
+			self.main_widget_source_text.setPlainText('')
+			self.main_widget_target_text.setPlainText('')
+			#if self.recent_files is not None:
+			#	self.build_menu(list(dict.fromkeys(self.recent_files))[:10], False)
+			#else:
+			#	self.build_menu(None, False)
+			
+			self.reset_globals()
+			self.main_widget_main_table_groupbox.setTitle("[No file]")
+			self.setWindowTitle('BlackCAT')
+			self.menu_file_save.setEnabled(False)
+			self.menu_file_close.setEnabled(False)
 	
 	def call_file_picker(self):
 		if self.valid_files:
@@ -1150,7 +1062,7 @@ class main_window(QtWidgets.QMainWindow):
 		self.status_msgbox.tasks_completed()
 		
 	def import_tm(self):
-		tm_file_name_list = QtWidgets.QFileDialog.getOpenFileNames(self, 'Import translation memory files', '', 'Any Supported File (*.tmx, *.po);;Translation Memory eXchange (*.tmx);;PO files (*.po)')[0]
+		tm_file_name_list = QtWidgets.QFileDialog.getOpenFileNames(self, 'Import translation memory files', '', 'PO files (*.po)')[0]
 		#import_options = {}
 		#import_options['tm_file_name_list'] = tm_file_name_list
 		#import_options['source_language'] = self.source_language
@@ -1158,7 +1070,9 @@ class main_window(QtWidgets.QMainWindow):
 		
 		#import_tm_thread = db_op.db_import_tm_thread(import_options, self.import_tm_onFinish, self)
 		#import_tm_thread.start()
-		self.list_of_loaded_plugin_widgets[0][1].import_tm.emit(tm_file_name_list)
+		
+		#self.list_of_loaded_plugin_widgets[0][1].import_tm.emit(tm_file_name_list)
+		self.suggestions_background_worker.import_tm.emit(tm_file_name_list)
 		
 	def show_about_dialog(self):
 		about_text = "BlackCAT 1.1 (beta)\n\n"
@@ -1167,22 +1081,23 @@ class main_window(QtWidgets.QMainWindow):
 		about_text = about_text + 'contact: carloswaldo@babelruins.org'
 		QtWidgets.QMessageBox.about(self, "About BlackCAT 1.1 (beta)", about_text)
 		
-	def closeEvent(self, event):		
+	def do_close(self):
 		#Ask if save current file
-		do_exit = False
 		if self.filename:
 			save_file_dialog = QtWidgets.QMessageBox.question(self, "Save file", "Do you want to save current file before closing?", QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel)
 			if save_file_dialog == QtWidgets.QMessageBox.Yes:
 				self.save_current_file()
-				do_exit = True
+				return True
 			elif save_file_dialog == QtWidgets.QMessageBox.No:
-				do_exit = True
+				return True
 			elif save_file_dialog == QtWidgets.QMessageBox.Cancel:
-				do_exit = False
+				return False
 		else:
-			do_exit = True
+			return True
+		return False
 
-		if do_exit:
+	def closeEvent(self, event):		
+		if self.do_close():
 			#Save settings
 			self.settings.setValue('size', self.size())
 			self.settings.setValue('pos', self.pos())

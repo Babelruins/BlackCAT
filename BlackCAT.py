@@ -1,7 +1,7 @@
 import sys
 import qdarkstyle
 from core import base
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5 import QtWidgets, QtGui
 
 if __name__ == '__main__':
 	app = QtWidgets.QApplication(sys.argv)

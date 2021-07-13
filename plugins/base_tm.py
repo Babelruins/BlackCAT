@@ -2,6 +2,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 from fuzzywuzzy import fuzz
 from core import db_op
 from os import path
+from mstranslator import Translator
 import html
 
 class main_worker(QtCore.QObject):
@@ -42,20 +43,30 @@ class main_worker(QtCore.QObject):
 			return
 
 		if self.tm_source_segments_cache:
-			matching_segments = db_op.get_translation_memory(self.tm_path, self.tm_source_segments_cache, options['target_language'], options['source_text'], 50)
+			matching_segments = db_op.get_translation_memory(self.tm_path, self.tm_source_segments_cache, options['target_language'], options['source_text'], 60)
 		else:
 			matching_segments = []
 
 		if not self.running:
 			return
 		
+		if options['context']:
+			suggestions_html += '<tr>'
+			suggestions_html += '<td valign="middle"><img src="images/code_white_24dp.svg"></td>'
+			suggestions_html += '<td><font color="gray">Occurrences (first 4):</font>'
+			for index, occurrence in enumerate(options['context']):
+				if index > 3:
+					break
+				suggestions_html += '<br>' + occurrence[0] + ':' + occurrence[1]
+			suggestions_html += '</td></tr>'
+
 		if options['previous_text']:
 			if options['previous_text'] != '':
 					suggestions_html += '<tr>'
 					suggestions_html += '<td valign="middle"><img src="images/undo_white_24dp.svg"></td>'
 					suggestions_html += '<td><font color="gray">Previous text:</font><br>'
 					suggestions_html += html.escape(options['previous_text'])
-					suggestions_html += '</tr></td>'
+					suggestions_html += '</td></tr>'
 
 		for index, row in enumerate(matching_segments):
 			suggestions_html += '<tr>'
@@ -64,13 +75,34 @@ class main_worker(QtCore.QObject):
 			suggestions_html += html.escape(row[1])
 			suggestions_html += '<br><font color="gray">Translated text:</font><br>'
 			suggestions_html += html.escape(row[2])
-			suggestions_html += '</tr></td>'
+			suggestions_html += '</td></tr>'
 			if index + 1 >= self.limit:
 				break
 			if not self.running:
 				return
 		suggestions_html += '</table>'
 		self.finished.emit(suggestions_html)
+
+		#Machine translation
+		settings = QtCore.QSettings("Babelruins.org", "BlackCAT")
+		translator = Translator(settings.value('plugins_mstranslate_api_key', ""))
+		try:
+			mst_response = translator.translate(options['source_text'], options['source_language'], options['target_language'])
+			if mst_response:
+				#suggestions_html += '<table border="0.5" cellspacing="0" cellpadding="2" width="100%" style="border-color:gray;">'
+				suggestions_html = suggestions_html[:-8]
+				suggestions_html += '<tr>'
+				suggestions_html += '<td valign="middle"><img src="images/computer_white_24dp.svg"></td>'
+				suggestions_html += '<td><font color="gray">Microsoft Translate:</font><br>'
+				suggestions_html += html.escape(mst_response)
+				suggestions_html += '</td></tr>'
+				suggestions_html += '</table>'
+				#suggestions_html.replace('</table>', mt_html)
+				if not self.running:
+					return
+				self.finished.emit(suggestions_html)
+		except Exception as e:
+			print(str(e))
 
 		#self.mutex.unlock()
 	
@@ -153,6 +185,7 @@ class main_widget(QtWidgets.QWidget):
 		for file in imported_files:
 			message = message + "\n- " + file
 		info_box = QtWidgets.QMessageBox()
+		info_box.setWindowTitle('BlackCAT')
 		info_box.setText(message)
 		info_box.setIcon(QtWidgets.QMessageBox.Information)
 		info_box.exec_()

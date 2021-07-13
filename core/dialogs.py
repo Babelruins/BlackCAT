@@ -291,3 +291,57 @@ class import_files_dialog(QtWidgets.QDialog):
 		self.progress_bar.setValue(1)
 		self.file_list_table.setEnabled(True)
 		self.actions_group.setEnabled(True)
+
+class settings_dialog(QtWidgets.QDialog):
+	def __init__(self):
+		super(settings_dialog, self).__init__()
+		self.setWindowTitle("Settings")
+		#self.setWindowFlags(QtCore.Qt.WindowTitleHint)
+		#self.setWindowFlags(QtCore.Qt.WindowSystemMenuHint)
+		self.setWindowIcon(QtGui.QIcon('images/blackcat.png'))
+		#self.setMinimumSize(600, 400)
+		self.setMinimumHeight(400)
+
+		layout = QtWidgets.QGridLayout(self)
+		layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
+
+		self.settings_table = QtWidgets.QTableWidget(self)
+		self.settings_table.setMinimumHeight(200)
+		#self.settings_table.setMaximumHeight(400)
+		self.settings_table.setColumnCount(2)
+		self.settings_table.setHorizontalHeaderLabels(["Parameter", "Value"])
+		self.settings_table.verticalHeader().hide()
+		self.settings_table.setAlternatingRowColors(True)
+		self.settings_table.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
+		#self.file_list_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+		#self.file_list_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+		#self.file_list_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+		self.table_header = self.settings_table.horizontalHeader()
+		self.table_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+		self.table_header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+
+		self.settings = QtCore.QSettings("Babelruins.org", "BlackCAT")
+
+		self.settings_table.insertRow(0)
+		self.settings_table.setItem(0, 0, QtWidgets.QTableWidgetItem("Microsoft Translator API key"))
+		self.settings_table.item(0,0).setFlags(QtCore.Qt.ItemIsEnabled)
+		self.settings_table.setItem(0, 1, QtWidgets.QTableWidgetItem(self.settings.value('plugins_mstranslate_api_key', "")))
+
+		#self.actions_group = QtWidgets.QGroupBox("Actions")
+		self.save_settings_button = QtWidgets.QPushButton("Save settings")
+		self.save_settings_button.clicked.connect(self.save_settings)
+		self.cancel_button = QtWidgets.QPushButton("Cancel")
+		self.cancel_button.clicked.connect(self.close)
+		#self.actions_layout = QtWidgets.QVBoxLayout()
+		#self.actions_layout.addWidget(self.save_settings_button)
+		#self.actions_layout.addWidget(self.cancel_button)
+		#self.actions_group.setLayout(self.actions_layout)
+		
+		layout.addWidget(self.settings_table, 0, 0, 1, 2)
+		#layout.addWidget(self.actions_group, 1, 0)
+		layout.addWidget(self.save_settings_button, 1, 0, 1, 1)
+		layout.addWidget(self.cancel_button, 1, 1, 1, 1)
+
+	def save_settings(self):
+		self.settings.setValue('plugins_mstranslate_api_key', self.settings_table.item(0,1).text())
+		self.close()
